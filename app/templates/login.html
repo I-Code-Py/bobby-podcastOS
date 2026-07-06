@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connexion — PodcastOS</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f172a; color: #f1f5f9; font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 2rem; width: 100%; max-width: 360px; }
+    .brand { font-size: 1.3rem; font-weight: 700; text-align: center; margin-bottom: 1.5rem; }
+    .brand span { color: #6366f1; }
+    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: .25rem; margin-top: .75rem; }
+    input { background: #0f172a; border: 1px solid #334155; color: #f1f5f9; padding: .5rem .75rem; border-radius: 6px; font-size: 14px; width: 100%; outline: none; }
+    input:focus { border-color: #6366f1; }
+    button { margin-top: 1.25rem; width: 100%; background: #6366f1; color: #fff; border: none; padding: .6rem; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    button:hover { opacity: .9; }
+    .error { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); color: #fca5a5; padding: .6rem .8rem; border-radius: 6px; font-size: 13px; margin-top: .75rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">Podcast<span>OS</span></div>
+    <form method="post" action="/login">
+      <label>Nom d'utilisateur</label>
+      <input type="text" name="username" autofocus autocomplete="username" required>
+      <label>Mot de passe</label>
+      <input type="password" name="password" autocomplete="current-password" required>
+      <button type="submit">Se connecter</button>
+    </form>
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+  </div>
+</body>
+</html>

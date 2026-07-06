@@ -1,34 +1,31 @@
+from __future__ import annotations
+
+import os
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from alembic import context
-
-from app.config import get_settings
-from app.db import Base
-
-# Enregistre tous les modèles sur Base.metadata pour l'autogénération
-import app.core.auth.models  # noqa: F401,E402
-import app.modules.clippers.models  # noqa: F401,E402
-
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Override URL from environment (used in Docker)
+db_url = os.environ.get("DATABASE_URL")
+if db_url:
+    config.set_main_option("sqlalchemy.url", db_url)
+
+from app.modules.clippers.models import Base  # noqa: E402
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
-        target_metadata=target_metadata,
-        literal_binds=True,
+        url=url, target_metadata=target_metadata, literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
-
     with context.begin_transaction():
         context.run_migrations()
 
@@ -39,10 +36,8 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
-
         with context.begin_transaction():
             context.run_migrations()
 

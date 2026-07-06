@@ -1,44 +1,33 @@
-# Variante pour un hébergement Plesk.
-#
-# Différences avec docker-compose.yml :
-#   - PAS de service Caddy : sur Plesk, c'est nginx (géré par Plesk) qui
-#     détient les ports 80/443 et le certificat Let's Encrypt du domaine.
-#   - L'app ne publie PAS 80/443, mais un port local (127.0.0.1:APP_PORT)
-#     que tu relies au domaine depuis « Docker Proxy Rules » dans Plesk.
-#   - uvicorn tourne déjà avec --proxy-headers (voir Dockerfile), donc il
-#     respecte le HTTPS terminé par le nginx de Plesk (cookies Secure OK).
-
 services:
-  app:
-    build: .
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      TZ: ${TIMEZONE:-Europe/Paris}
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - ./data:/srv/app/data
-    # Publié uniquement sur la boucle locale : seul le nginx de Plesk
-    # (même machine) peut l'atteindre, jamais l'Internet en direct.
-    ports:
-      - "127.0.0.1:${APP_PORT:-7000}:8000"
-
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_DB: podcastos
+      POSTGRES_USER: podcast
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U podcast -d podcastos"]
+      interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://podcast:${DB_PASSWORD:-changeme}@db:5432/podcastos
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY required}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+      SECURE_COOKIES: "true"
+      INSTAGRAM_COOKIE_FILE: ${INSTAGRAM_COOKIE_FILE:-}
+    ports:
+      - "127.0.0.1:${APP_PORT:-7000}:8000"
 
 volumes:
   pgdata:

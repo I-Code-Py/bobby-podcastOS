@@ -1,64 +1,65 @@
-import re
-from datetime import date
+from __future__ import annotations
 
-from sqlalchemy import delete, select
+import re
+
 from sqlalchemy.orm import Session
 
-from app.modules.clippers.models import (
-    ACCOUNT_STATUS_ACTIVE,
-    PLATFORM_INSTAGRAM,
-    PLATFORM_TIKTOK,
-    PLATFORM_YOUTUBE,
-    SNAPSHOT_SOURCE_MANUAL,
-    Account,
-    AccountVideo,
-    AccountVideoSnapshot,
-    AccountViewSnapshot,
-    Clipper,
-    PayoutLineAccountSnapshot,
+from app.modules.clippers.models import Account, AccountStatus, Clipper, Platform
+
+
+_YT_PATTERNS = [
+    re.compile(r"youtube\.com/@[\w.-]+"),
+    re.compile(r"youtube\.com/channel/[\w-]+"),
+    re.compile(r"youtube\.com/c/[\w.-]+"),
+    re.compile(r"youtube\.com/user/[\w.-]+"),
+]
+_TIKTOK_PATTERN = re.compile(r"tiktok\.com/@[\w.-]+")
+_IG_PATTERN = re.compile(
+    r"instagram\.com/(?!reel/|reels/|p/|explore/|stories/)[\w.-]+"
 )
 
-# Détection de la plateforme + du handle à partir de l'URL d'un profil/compte
-_YOUTUBE_RE = re.compile(
-    r"youtube\.com/(?:(@[\w.-]+)|channel/([\w-]+)|c/([\w.-]+)|user/([\w.-]+))"
-)
-_TIKTOK_RE = re.compile(r"tiktok\.com/(@[\w.-]+)")
-_INSTAGRAM_RE = re.compile(r"instagram\.com/([\w.][\w.-]*)")
 
-# Segments Instagram qui ne sont pas des profils
-_INSTAGRAM_RESERVED = {"reel", "reels", "p", "explore", "stories", "tv"}
-
-
-def detect_account(url: str) -> tuple[str, str | None]:
-    """Déduit (plateforme, handle) de l'URL d'un compte."""
-    url = url.strip()
-    match = _YOUTUBE_RE.search(url)
-    if match:
-        handle = next((g for g in match.groups() if g), None)
-        return PLATFORM_YOUTUBE, handle
-    match = _TIKTOK_RE.search(url)
-    if match:
-        return PLATFORM_TIKTOK, match.group(1)
-    match = _INSTAGRAM_RE.search(url)
-    if match and match.group(1).lower() not in _INSTAGRAM_RESERVED:
-        return PLATFORM_INSTAGRAM, match.group(1)
-    raise ValueError(
-        "URL de compte non reconnue : attendu une chaîne YouTube "
-        "(youtube.com/@… ou /channel/…), un profil TikTok (tiktok.com/@…) "
-        "ou un profil Instagram (instagram.com/…)"
-    )
+def detect_platform(url: str) -> Platform | None:
+    u = url.lower()
+    if any(p.search(u) for p in _YT_PATTERNS):
+        return Platform.youtube
+    if _TIKTOK_PATTERN.search(u):
+        return Platform.tiktok
+    if _IG_PATTERN.search(u):
+        return Platform.instagram
+    return None
 
 
-def add_account(db: Session, clipper: Clipper, url: str) -> Account:
-    url = url.strip()
-    existing = db.scalar(select(Account).where(Account.profile_url == url))
+def extract_handle(url: str) -> str:
+    """Best-effort handle extraction from profile URL."""
+    url = url.rstrip("/")
+    # @handle style
+    m = re.search(r"@([\w.-]+)", url)
+    if m:
+        return m.group(1)
+    return url.split("/")[-1]
+
+
+def create_account(
+    db: Session,
+    clipper_id: int,
+    profile_url: str,
+) -> Account:
+    platform = detect_platform(profile_url)
+    if platform is None:
+        raise ValueError(f"URL non reconnue: {profile_url}")
+
+    existing = db.query(Account).filter_by(profile_url=profile_url).first()
     if existing:
-        raise ValueError(
-            f"Ce compte est déjà assigné au clippeur « {existing.clipper.name} »"
-        )
-    platform, handle = detect_account(url)
+        raise ValueError("Ce compte existe déjà")
+
+    handle = extract_handle(profile_url)
     account = Account(
-        clipper_id=clipper.id, platform=platform, profile_url=url, handle=handle
+        clipper_id=clipper_id,
+        platform=platform,
+        profile_url=profile_url,
+        handle=handle,
+        status=AccountStatus.active,
     )
     db.add(account)
     db.commit()
@@ -66,80 +67,15 @@ def add_account(db: Session, clipper: Clipper, url: str) -> Account:
     return account
 
 
-def record_manual_total(db: Session, account: Account, total_views: int,
-                        captured_at: date | None = None) -> None:
-    """Saisie manuelle du total de vues du compte (repli quand le scraping
-    échoue, ex. Instagram)."""
-    if total_views < 0:
-        raise ValueError("Le nombre de vues ne peut pas être négatif")
-    captured_at = captured_at or date.today()
-    snapshot = db.scalar(
-        select(AccountViewSnapshot).where(
-            AccountViewSnapshot.account_id == account.id,
-            AccountViewSnapshot.captured_at == captured_at,
-        )
-    )
-    if snapshot is None:
-        snapshot = AccountViewSnapshot(account_id=account.id, captured_at=captured_at,
-                                       video_count=account.latest_video_count)
-        db.add(snapshot)
-    snapshot.total_views = total_views
-    snapshot.source = SNAPSHOT_SOURCE_MANUAL
-    account.consecutive_failures = 0
-    account.last_fetch_status = "manual"
-    if account.status != ACCOUNT_STATUS_ACTIVE:
-        account.status = ACCOUNT_STATUS_ACTIVE
-    db.commit()
+def delete_account(db: Session, account_id: int) -> None:
+    account = db.get(Account, account_id)
+    if account:
+        db.delete(account)
+        db.commit()
 
 
-def archive_account(db: Session, account: Account) -> None:
-    from app.modules.clippers.models import ACCOUNT_STATUS_ARCHIVED
-
-    account.status = ACCOUNT_STATUS_ARCHIVED
-    db.commit()
-
-
-def reassign_account(db: Session, account: Account, new_clipper: Clipper) -> None:
-    """Déplace un compte vers un autre clippeur (erreur d'assignation)."""
-    if new_clipper.id == account.clipper_id:
-        raise ValueError(f"Ce compte est déjà assigné à « {new_clipper.name} »")
-    account.clipper_id = new_clipper.id
-    db.commit()
-
-
-def _assert_account_deletable(db: Session, account: Account) -> None:
-    """Lève une erreur si le compte apparaît déjà dans un récap (payé ou en
-    attente) : le supprimer casserait une contrainte de clé étrangère et
-    ferait perdre l'historique de paiement."""
-    referenced = db.scalar(
-        select(PayoutLineAccountSnapshot.id)
-        .where(PayoutLineAccountSnapshot.account_id == account.id)
-        .limit(1)
-    )
-    if referenced:
-        raise ValueError(
-            "Ce compte apparaît déjà dans un récap de paiement : archivez-le "
-            "plutôt que de le supprimer, pour ne pas perdre l'historique."
-        )
-
-
-def _delete_account_no_commit(db: Session, account: Account) -> None:
-    """Purge l'historique du compte puis le compte lui-même, sans committer
-    (permet d'enchaîner plusieurs suppressions dans une seule transaction,
-    ex. lors de la suppression d'un clippeur entier)."""
-    video_ids = select(AccountVideo.id).where(AccountVideo.account_id == account.id)
-    db.execute(delete(AccountVideoSnapshot).where(
-        AccountVideoSnapshot.account_video_id.in_(video_ids)
-    ))
-    db.execute(delete(AccountVideo).where(AccountVideo.account_id == account.id))
-    db.execute(delete(AccountViewSnapshot).where(AccountViewSnapshot.account_id == account.id))
-    db.delete(account)
-
-
-def delete_account(db: Session, account: Account) -> None:
-    """Supprime définitivement le compte et tout son historique de vues et
-    de vidéos. Refuse si le compte a déjà été inclus dans un récap (payé ou
-    en attente) — dans ce cas, utilisez l'archivage à la place."""
-    _assert_account_deletable(db, account)
-    _delete_account_no_commit(db, account)
-    db.commit()
+def get_clipper_or_404(db: Session, clipper_id: int) -> Clipper:
+    clipper = db.get(Clipper, clipper_id)
+    if clipper is None:
+        raise ValueError("Clipper introuvable")
+    return clipper

@@ -1,52 +1,55 @@
+from __future__ import annotations
+
 import logging
-from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
-from app.config import get_settings
+from app.core.database import SessionLocal
+from app.modules.clippers.services import payout_service, view_refresh_service
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 _scheduler: BackgroundScheduler | None = None
 
 
-def build_scheduler() -> BackgroundScheduler:
-    """Construit le scheduler et laisse chaque module y enregistrer ses jobs."""
-    settings = get_settings()
-    scheduler = BackgroundScheduler(timezone=ZoneInfo(settings.timezone))
+def _daily_refresh() -> None:
+    log.info("Scheduled: starting daily view refresh")
+    db = SessionLocal()
+    try:
+        stats = view_refresh_service.refresh_all(db)
+        log.info("Daily refresh done: %s", stats)
+    except Exception:
+        log.exception("Daily refresh failed")
+    finally:
+        db.close()
 
-    from app.modules.clippers import jobs as clippers_jobs
 
-    clippers_jobs.register(scheduler)
-    return scheduler
+def _weekly_payout() -> None:
+    log.info("Scheduled: generating weekly payout cycle")
+    db = SessionLocal()
+    try:
+        cycle = payout_service.generate_cycle(db)
+        log.info("Payout cycle #%s generated, total %s cents", cycle.id, cycle.total_cents)
+    except Exception:
+        log.exception("Payout generation failed")
+    finally:
+        db.close()
 
 
-def start_scheduler() -> BackgroundScheduler | None:
+def start() -> None:
     global _scheduler
-    settings = get_settings()
-    if not settings.scheduler_enabled:
-        logger.info("Scheduler désactivé (SCHEDULER_ENABLED=false)")
-        return None
-    _scheduler = build_scheduler()
+    _scheduler = BackgroundScheduler(timezone="Europe/Paris")
+    # Daily refresh at 03:00 Europe/Paris
+    _scheduler.add_job(_daily_refresh, CronTrigger(hour=3, minute=0), id="daily_refresh")
+    # Weekly payout recap Sunday 18:00 Europe/Paris
+    _scheduler.add_job(
+        _weekly_payout, CronTrigger(day_of_week="sun", hour=18, minute=0), id="weekly_payout"
+    )
     _scheduler.start()
-    for job in _scheduler.get_jobs():
-        logger.info("Job planifié : %s (%s)", job.id, job.trigger)
-    return _scheduler
+    log.info("Scheduler started")
 
 
-def stop_scheduler() -> None:
-    global _scheduler
-    if _scheduler is not None:
+def stop() -> None:
+    if _scheduler:
         _scheduler.shutdown(wait=False)
-        _scheduler = None
-
-
-def run_in_background(func, *args, job_id: str | None = None) -> bool:
-    """Exécute une fonction immédiatement en arrière-plan via le scheduler
-    (utilisé par les boutons « maintenant » de l'UI). Retourne False si le
-    scheduler ne tourne pas (l'appelant exécutera alors en synchrone)."""
-    if _scheduler is None:
-        return False
-    _scheduler.add_job(func, args=args, id=job_id, replace_existing=True,
-                       misfire_grace_time=3600)
-    return True

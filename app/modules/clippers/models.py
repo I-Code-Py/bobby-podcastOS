@@ -1,231 +1,226 @@
-from datetime import date, datetime, timezone
+from __future__ import annotations
+
+import enum
+from datetime import date, datetime
 
 from sqlalchemy import (
-    Boolean,
-    Date,
-    DateTime,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
+    BigInteger, Boolean, Date, DateTime, Enum, ForeignKey,
+    Integer, String, Text, UniqueConstraint, func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db import Base
-
-PLATFORM_YOUTUBE = "youtube"
-PLATFORM_TIKTOK = "tiktok"
-PLATFORM_INSTAGRAM = "instagram"
-PLATFORMS = (PLATFORM_YOUTUBE, PLATFORM_TIKTOK, PLATFORM_INSTAGRAM)
-
-PLATFORM_LABELS = {
-    PLATFORM_YOUTUBE: "YouTube",
-    PLATFORM_TIKTOK: "TikTok",
-    PLATFORM_INSTAGRAM: "Instagram",
-}
-
-# Statuts d'un compte vis-à-vis de la collecte automatique des vues
-ACCOUNT_STATUS_ACTIVE = "active"
-ACCOUNT_STATUS_MANUAL_REQUIRED = "manual_required"
-ACCOUNT_STATUS_ERROR = "error"
-ACCOUNT_STATUS_ARCHIVED = "archived"
-
-PAYOUT_PENDING = "pending"
-PAYOUT_PAID = "paid"
-PAYOUT_SUPERSEDED = "superseded"
-
-# Moyens de paiement d'un clippeur (pour générer un lien de paiement pré-rempli)
-PAYMENT_PAYPAL = "paypal"
-PAYMENT_REVOLUT = "revolut"
-PAYMENT_METHODS = (PAYMENT_PAYPAL, PAYMENT_REVOLUT)
-PAYMENT_METHOD_LABELS = {PAYMENT_PAYPAL: "PayPal", PAYMENT_REVOLUT: "Revolut"}
-
-SNAPSHOT_SOURCE_AUTO = "auto"
-SNAPSHOT_SOURCE_MANUAL = "manual"
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+class Base(DeclarativeBase):
+    pass
+
+
+class AccountStatus(str, enum.Enum):
+    active = "active"
+    manual_required = "manual_required"
+    error = "error"
+
+
+class Platform(str, enum.Enum):
+    youtube = "youtube"
+    tiktok = "tiktok"
+    instagram = "instagram"
 
 
 class Clipper(Base):
     __tablename__ = "clippers"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(200), unique=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    # Paiement : méthode ("paypal"/"revolut") + pseudo (ou identifiant du lien)
-    payment_method: Mapped[str | None] = mapped_column(String(20))
-    payment_handle: Mapped[str | None] = mapped_column(String(200))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    payment_link: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    accounts: Mapped[list["Account"]] = relationship(back_populates="clipper")
-
-    @property
-    def payment_method_label(self) -> str | None:
-        return PAYMENT_METHOD_LABELS.get(self.payment_method) if self.payment_method else None
+    accounts: Mapped[list[Account]] = relationship(
+        "Account", back_populates="clipper", cascade="all, delete-orphan"
+    )
+    payout_lines: Mapped[list[PayoutLine]] = relationship(
+        "PayoutLine", back_populates="clipper"
+    )
 
 
 class Account(Base):
-    """Un compte réseau social (une chaîne/profil sur une plateforme) assigné
-    à un clippeur. On scrape toutes ses vidéos et on somme leurs vues."""
-
     __tablename__ = "accounts"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    clipper_id: Mapped[int] = mapped_column(ForeignKey("clippers.id"), index=True)
-    platform: Mapped[str] = mapped_column(String(20))
-    profile_url: Mapped[str] = mapped_column(String(700), unique=True)
-    handle: Mapped[str | None] = mapped_column(String(200))
-    status: Mapped[str] = mapped_column(String(30), default=ACCOUNT_STATUS_ACTIVE)
-    last_fetch_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_fetch_status: Mapped[str | None] = mapped_column(String(30))
-    last_fetch_error: Mapped[str | None] = mapped_column(Text)
-    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
-    # Vues déjà rémunérées : figées uniquement quand un récap est marqué payé
-    views_at_last_payout_checkpoint: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    clipper_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("clippers.id", ondelete="CASCADE"), nullable=False
+    )
+    platform: Mapped[Platform] = mapped_column(Enum(Platform), nullable=False)
+    profile_url: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    handle: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[AccountStatus] = mapped_column(
+        Enum(AccountStatus), default=AccountStatus.active, nullable=False
+    )
+    last_fetch_at: Mapped[datetime | None] = mapped_column(DateTime)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    views_at_last_payout_checkpoint: Mapped[int] = mapped_column(
+        BigInteger, default=0, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    clipper: Mapped[Clipper] = relationship(back_populates="accounts")
-    videos: Mapped[list["AccountVideo"]] = relationship(back_populates="account")
-    snapshots: Mapped[list["AccountViewSnapshot"]] = relationship(
-        back_populates="account", order_by="AccountViewSnapshot.captured_at"
+    clipper: Mapped[Clipper] = relationship("Clipper", back_populates="accounts")
+    videos: Mapped[list[AccountVideo]] = relationship(
+        "AccountVideo", back_populates="account", cascade="all, delete-orphan"
+    )
+    view_snapshots: Mapped[list[AccountViewSnapshot]] = relationship(
+        "AccountViewSnapshot", back_populates="account", cascade="all, delete-orphan"
     )
 
     @property
     def latest_total_views(self) -> int:
-        return self.snapshots[-1].total_views if self.snapshots else 0
-
-    @property
-    def latest_video_count(self) -> int:
-        return self.snapshots[-1].video_count if self.snapshots else 0
-
-    @property
-    def platform_label(self) -> str:
-        return PLATFORM_LABELS.get(self.platform, self.platform)
+        if not self.view_snapshots:
+            return 0
+        return max(s.total_views for s in self.view_snapshots)
 
 
 class AccountVideo(Base):
-    """Une vidéo trouvée sur le compte lors d'un scraping (upsert par id)."""
-
     __tablename__ = "account_videos"
-    __table_args__ = (UniqueConstraint("account_id", "platform_video_id"),)
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
-    platform_video_id: Mapped[str] = mapped_column(String(200))
-    url: Mapped[str | None] = mapped_column(String(700))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    platform_video_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(512), nullable=False)
     title: Mapped[str | None] = mapped_column(Text)
-    view_count: Mapped[int | None] = mapped_column(Integer)
+    view_count: Mapped[int | None] = mapped_column(BigInteger)
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     published_at: Mapped[date | None] = mapped_column(Date)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[date | None] = mapped_column(Date)
 
-    account: Mapped[Account] = relationship(back_populates="videos")
-    snapshots: Mapped[list["AccountVideoSnapshot"]] = relationship(
-        back_populates="video", order_by="AccountVideoSnapshot.captured_at"
+    __table_args__ = (UniqueConstraint("account_id", "platform_video_id"),)
+
+    account: Mapped[Account] = relationship("Account", back_populates="videos")
+    snapshots: Mapped[list[AccountVideoSnapshot]] = relationship(
+        "AccountVideoSnapshot", back_populates="video", cascade="all, delete-orphan"
     )
 
 
 class AccountVideoSnapshot(Base):
-    """Nombre de vues d'une vidéo à une date (historique jour par jour, pour
-    suivre l'évolution de chaque vidéo)."""
-
     __tablename__ = "account_video_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_video_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("account_videos.id", ondelete="CASCADE"), nullable=False
+    )
+    view_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    captured_at: Mapped[date] = mapped_column(Date, nullable=False)
+
     __table_args__ = (UniqueConstraint("account_video_id", "captured_at"),)
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    account_video_id: Mapped[int] = mapped_column(
-        ForeignKey("account_videos.id"), index=True
-    )
-    view_count: Mapped[int] = mapped_column(Integer)
-    captured_at: Mapped[date] = mapped_column(Date)
-
-    video: Mapped[AccountVideo] = relationship(back_populates="snapshots")
+    video: Mapped[AccountVideo] = relationship("AccountVideo", back_populates="snapshots")
 
 
 class AccountViewSnapshot(Base):
-    """Total des vues du compte (somme de toutes ses vidéos) à une date."""
-
     __tablename__ = "account_view_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    total_views: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    video_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    captured_at: Mapped[date] = mapped_column(Date, nullable=False)
+
     __table_args__ = (UniqueConstraint("account_id", "captured_at"),)
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
-    total_views: Mapped[int] = mapped_column(Integer)
-    video_count: Mapped[int] = mapped_column(Integer, default=0)
-    captured_at: Mapped[date] = mapped_column(Date)
-    source: Mapped[str] = mapped_column(String(10), default=SNAPSHOT_SOURCE_AUTO)
-
-    account: Mapped[Account] = relationship(back_populates="snapshots")
+    account: Mapped[Account] = relationship("Account", back_populates="view_snapshots")
 
 
 class PayoutCycle(Base):
     __tablename__ = "payout_cycles"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    week_start_date: Mapped[date] = mapped_column(Date)
-    week_end_date: Mapped[date] = mapped_column(Date)
-    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    total_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime)
 
-    lines: Mapped[list["PayoutLine"]] = relationship(back_populates="cycle")
+    lines: Mapped[list[PayoutLine]] = relationship(
+        "PayoutLine", back_populates="cycle", cascade="all, delete-orphan"
+    )
 
 
 class PayoutLine(Base):
     __tablename__ = "payout_lines"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    payout_cycle_id: Mapped[int] = mapped_column(ForeignKey("payout_cycles.id"), index=True)
-    clipper_id: Mapped[int] = mapped_column(ForeignKey("clippers.id"), index=True)
-    delta_views: Mapped[int] = mapped_column(Integer)
-    amount_due_cents: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(20), default=PAYOUT_PENDING)
-    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    superseded_by_line_id: Mapped[int | None] = mapped_column(ForeignKey("payout_lines.id"))
-
-    cycle: Mapped[PayoutCycle] = relationship(back_populates="lines")
-    clipper: Mapped[Clipper] = relationship()
-    account_details: Mapped[list["PayoutLineAccountDetail"]] = relationship(
-        back_populates="line"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    cycle_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("payout_cycles.id", ondelete="CASCADE"), nullable=False
     )
-    account_snapshots: Mapped[list["PayoutLineAccountSnapshot"]] = relationship(
-        back_populates="line"
+    clipper_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("clippers.id", ondelete="SET NULL"), nullable=True
+    )
+    clipper_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
+    total_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime)
+    held: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    hold_note: Mapped[str | None] = mapped_column(Text)
+
+    cycle: Mapped[PayoutCycle] = relationship("PayoutCycle", back_populates="lines")
+    clipper: Mapped[Clipper | None] = relationship("Clipper", back_populates="payout_lines")
+    account_details: Mapped[list[PayoutLineAccountDetail]] = relationship(
+        "PayoutLineAccountDetail", back_populates="line", cascade="all, delete-orphan"
     )
 
 
 class PayoutLineAccountDetail(Base):
     __tablename__ = "payout_line_account_details"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    payout_line_id: Mapped[int] = mapped_column(ForeignKey("payout_lines.id"), index=True)
-    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
-    delta_views: Mapped[int] = mapped_column(Integer)
-    amount_cents: Mapped[int] = mapped_column(Integer)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    line_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("payout_lines.id", ondelete="CASCADE"), nullable=False
+    )
+    account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    handle_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
+    platform_snapshot: Mapped[str] = mapped_column(String(50), nullable=False)
+    delta_views: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    payout_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    line: Mapped[PayoutLine] = relationship(back_populates="account_details")
-    account: Mapped[Account] = relationship()
+    line: Mapped[PayoutLine] = relationship("PayoutLine", back_populates="account_details")
+    snapshot: Mapped[PayoutLineAccountSnapshot | None] = relationship(
+        "PayoutLineAccountSnapshot", back_populates="detail",
+        uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class PayoutLineAccountSnapshot(Base):
-    """Fige les vues début/fin par compte pour ce récap (base du checkpoint)."""
-
     __tablename__ = "payout_line_account_snapshots"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    payout_line_id: Mapped[int] = mapped_column(ForeignKey("payout_lines.id"), index=True)
-    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
-    start_views: Mapped[int] = mapped_column(Integer)
-    end_views: Mapped[int] = mapped_column(Integer)
-    delta_views: Mapped[int] = mapped_column(Integer)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    detail_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("payout_line_account_details.id", ondelete="CASCADE"),
+        nullable=False, unique=True
+    )
+    start_views: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    end_views: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
-    line: Mapped[PayoutLine] = relationship(back_populates="account_snapshots")
-    account: Mapped[Account] = relationship()
+    detail: Mapped[PayoutLineAccountDetail] = relationship(
+        "PayoutLineAccountDetail", back_populates="snapshot"
+    )
 
 
 class AppSetting(Base):
     __tablename__ = "app_settings"
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
-    value: Mapped[str] = mapped_column(String(500))
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    role: Mapped[str] = mapped_column(String(50), default="viewer", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

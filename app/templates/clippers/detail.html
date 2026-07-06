@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}{{ clipper.name }} — PodcastOS{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div style="display:flex;align-items:center;gap:.75rem">
+    <a href="/clippers" class="btn btn-ghost btn-sm">← Retour</a>
+    <h1 style="margin:0">{{ clipper.name }}{% if not clipper.active %} <span class="badge badge-gray">Inactif</span>{% endif %}</h1>
+  </div>
+  <div style="display:flex;gap:.5rem">
+    <a href="/clippers/{{ clipper.id }}/evolution" class="btn btn-ghost btn-sm">📈 Évolution</a>
+    {% if user.role == 'admin' %}
+    <form action="/clippers/refresh-all" method="post">
+      <button class="btn btn-ghost btn-sm">↻ Rafraîchir tout</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if clipper.notes %}
+<p class="muted" style="margin-bottom:1rem;font-size:13px">{{ clipper.notes }}</p>
+{% endif %}
+
+<!-- Stats -->
+{% set total_views = namespace(v=0) %}
+{% set total_videos = namespace(v=0) %}
+{% for acc in clipper.accounts %}
+  {% set total_views.v = total_views.v + acc.latest_total_views %}
+  {% set total_videos.v = total_videos.v + (acc.videos | length) %}
+{% endfor %}
+<div class="grid-2" style="margin-bottom:1.25rem">
+  <div class="stat-box"><div class="label">Vues qualifiantes totales</div><div class="value">{{ "{:,}".format(total_views.v) }}</div></div>
+  <div class="stat-box"><div class="label">Vidéos indexées</div><div class="value">{{ total_videos.v }}</div></div>
+  <div class="stat-box"><div class="label">Comptes</div><div class="value">{{ clipper.accounts | length }}</div></div>
+</div>
+
+<!-- Edit form -->
+{% if user.role == 'admin' %}
+<div class="card" style="margin-bottom:1.25rem">
+  <h2>Modifier</h2>
+  <form action="/clippers/{{ clipper.id }}/edit" method="post">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Nom</label>
+        <input type="text" name="name" value="{{ clipper.name }}" required>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <input type="text" name="notes" value="{{ clipper.notes or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Lien paiement (PayPal, Wise, etc.)</label>
+        <input type="url" name="payment_link" value="{{ clipper.payment_link or '' }}" placeholder="https://paypal.me/handle">
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:.5rem;padding-bottom:0">
+        <label style="display:flex;align-items:center;gap:.4rem;margin:0;padding-bottom:.4rem">
+          <input type="checkbox" name="active" {% if clipper.active %}checked{% endif %} style="width:auto">
+          <span style="color:var(--text);font-size:13px">Actif</span>
+        </label>
+        <button class="btn btn-primary">Enregistrer</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Add account -->
+<div class="card" style="margin-bottom:1.25rem">
+  <h2>Ajouter un compte</h2>
+  <form action="/clippers/{{ clipper.id }}/accounts" method="post">
+    <div class="form-row">
+      <div class="form-group" style="flex:2">
+        <label>URL du profil (YouTube / TikTok / Instagram)</label>
+        <input type="url" name="profile_url" placeholder="https://www.youtube.com/@handle" required>
+      </div>
+      <div>
+        <button class="btn btn-primary" style="margin-top:1.3rem">+ Ajouter</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<!-- Accounts list -->
+<div class="card">
+  <h2>Comptes</h2>
+  {% if not clipper.accounts %}
+  <p class="muted">Aucun compte associé.</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Plateforme</th>
+        <th>Handle</th>
+        <th>Statut</th>
+        <th>Vues qualif.</th>
+        <th>Vidéos</th>
+        <th>Dernier refresh</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for acc in clipper.accounts %}
+    <tr>
+      <td>
+        <span class="badge badge-{{ acc.platform.value[:2] }}">{{ acc.platform.value }}</span>
+      </td>
+      <td><a href="{{ acc.profile_url }}" target="_blank">{{ acc.handle }}</a></td>
+      <td>
+        {% if acc.status.value == 'active' %}<span class="badge badge-green">Actif</span>
+        {% elif acc.status.value == 'error' %}<span class="badge badge-red" title="{{ acc.consecutive_failures }} échecs">Erreur</span>
+        {% elif acc.status.value == 'manual_required' %}<span class="badge badge-yellow" title="Instagram requiert des cookies">Manuel requis</span>
+        {% endif %}
+      </td>
+      <td>{{ "{:,}".format(acc.latest_total_views) }}</td>
+      <td>{{ acc.videos | length }}</td>
+      <td class="muted">{{ acc.last_fetch_at.strftime('%d/%m %H:%M') if acc.last_fetch_at else '—' }}</td>
+      <td style="text-align:right">
+        {% if user.role == 'admin' %}
+        <form action="/clippers/{{ clipper.id }}/accounts/{{ acc.id }}/refresh" method="post" style="display:inline">
+          <button class="btn btn-ghost btn-sm">↻</button>
+        </form>
+        <form action="/clippers/{{ clipper.id }}/accounts/{{ acc.id }}/delete" method="post" style="display:inline"
+              onsubmit="return confirm('Supprimer ce compte et toutes ses données ?')">
+          <button class="btn btn-danger btn-sm">Supprimer</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<!-- Top videos -->
+{% for acc in clipper.accounts %}
+{% if acc.videos %}
+<div class="card" style="margin-top:1rem">
+  <h3>{{ acc.platform.value }} · {{ acc.handle }} — Top vidéos</h3>
+  <table>
+    <thead>
+      <tr><th>Titre</th><th>Vues</th><th>Publié</th></tr>
+    </thead>
+    <tbody>
+    {% for vid in acc.videos | sort(attribute='view_count', reverse=True) | list | batch(10) | first %}
+    <tr>
+      <td><a href="{{ vid.url }}" target="_blank" style="max-width:300px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ vid.title or vid.platform_video_id }}</a></td>
+      <td>{% if vid.view_count %}{{ "{:,}".format(vid.view_count) }}{% else %}—{% endif %}</td>
+      <td class="muted">{{ vid.published_at or '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endfor %}
+
+{% if user.role == 'admin' %}
+<div style="margin-top:2rem;padding-top:1rem;border-top:1px solid var(--border)">
+  <form action="/clippers/{{ clipper.id }}/delete" method="post"
+        onsubmit="return confirm('Supprimer {{ clipper.name }} et toutes ses données ?')">
+    <button class="btn btn-danger btn-sm">Supprimer ce clipper</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}PodcastOS{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a; --surface: #1e293b; --border: #334155;
+      --text: #f1f5f9; --muted: #94a3b8; --accent: #6366f1;
+      --accent2: #818cf8; --green: #22c55e; --red: #ef4444;
+      --yellow: #eab308; --orange: #f97316;
+    }
+    body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.6; min-height: 100vh; }
+    a { color: var(--accent2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; display: flex; align-items: center; gap: 1.5rem; height: 52px; }
+    nav .brand { font-weight: 700; font-size: 1rem; color: var(--text); letter-spacing: -.02em; }
+    nav .brand span { color: var(--accent); }
+    nav .nav-links { display: flex; gap: 1rem; flex: 1; }
+    nav .nav-links a { color: var(--muted); font-size: 13px; padding: 4px 8px; border-radius: 5px; transition: background .15s, color .15s; }
+    nav .nav-links a:hover, nav .nav-links a.active { background: rgba(99,102,241,.15); color: var(--accent2); text-decoration: none; }
+    nav .user-info { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: .75rem; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+    .card + .card { margin-top: 1rem; }
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 1rem; }
+    h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: .75rem; }
+    h3 { font-size: .95rem; font-weight: 600; margin-bottom: .5rem; }
+    .btn { display: inline-flex; align-items: center; gap: .4rem; padding: .4rem .9rem; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: opacity .15s; text-decoration: none; }
+    .btn:hover { opacity: .85; text-decoration: none; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-sm { padding: .25rem .6rem; font-size: 12px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+    .badge-green { background: rgba(34,197,94,.15); color: var(--green); }
+    .badge-red { background: rgba(239,68,68,.15); color: var(--red); }
+    .badge-yellow { background: rgba(234,179,8,.15); color: var(--yellow); }
+    .badge-gray { background: rgba(148,163,184,.1); color: var(--muted); }
+    .badge-yt { background: rgba(239,68,68,.15); color: #ff4444; }
+    .badge-tt { background: rgba(20,184,166,.15); color: #14b8a6; }
+    .badge-ig { background: rgba(249,115,22,.15); color: var(--orange); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; color: var(--muted); font-weight: 500; padding: .5rem .75rem; border-bottom: 1px solid var(--border); }
+    td { padding: .5rem .75rem; border-bottom: 1px solid rgba(51,65,85,.5); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    input, textarea, select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: .4rem .7rem; border-radius: 6px; font-size: 13px; width: 100%; outline: none; }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: .25rem; }
+    .form-row { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; }
+    .form-group { flex: 1; min-width: 180px; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; flex-wrap: wrap; gap: .75rem; }
+    .alert { padding: .75rem 1rem; border-radius: 8px; font-size: 13px; margin-bottom: 1rem; }
+    .alert-error { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); color: #fca5a5; }
+    .alert-success { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.3); color: #86efac; }
+    .muted { color: var(--muted); }
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .stat-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+    .stat-box .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .stat-box .value { font-size: 1.6rem; font-weight: 700; color: var(--text); margin-top: .25rem; }
+  </style>
+</head>
+<body>
+<nav>
+  <span class="brand">Podcast<span>OS</span></span>
+  <div class="nav-links">
+    <a href="/clippers" {% if request.url.path.startswith('/clippers') and not 'payouts' in request.url.path %}class="active"{% endif %}>Clippers</a>
+    <a href="/clippers/payouts" {% if 'payouts' in request.url.path %}class="active"{% endif %}>Payouts</a>
+    <a href="/settings" {% if request.url.path == '/settings' %}class="active"{% endif %}>Paramètres</a>
+  </div>
+  {% if user %}
+  <div class="user-info">
+    <span>{{ user.username }}</span>
+    <form action="/logout" method="post" style="margin:0">
+      <button class="btn btn-ghost btn-sm">Déconnexion</button>
+    </form>
+  </div>
+  {% endif %}
+</nav>
+<div class="container">
+{% block content %}{% endblock %}
+</div>
+</body>
+</html>

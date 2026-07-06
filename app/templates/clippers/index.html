@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Clippers — PodcastOS{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Clippers</h1>
+  <div style="display:flex;gap:.5rem;align-items:center">
+    {% if user.role == 'admin' %}
+    <form action="/clippers/refresh-all" method="post">
+      <button class="btn btn-ghost btn-sm">↻ Rafraîchir tout</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if user.role == 'admin' %}
+<div class="card" style="margin-bottom:1.25rem">
+  <h2>Nouveau clipper</h2>
+  <form action="/clippers" method="post">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Nom</label>
+        <input type="text" name="name" placeholder="Ex: Jean Dupont" required>
+      </div>
+      <div class="form-group">
+        <label>Notes (optionnel)</label>
+        <input type="text" name="notes" placeholder="Infos supplémentaires">
+      </div>
+      <div>
+        <button class="btn btn-primary" style="margin-top:1.3rem">+ Créer</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% if not clippers %}
+<div class="card muted" style="text-align:center;padding:2.5rem">Aucun clipper pour l'instant.</div>
+{% else %}
+<div class="grid-2">
+{% for clipper in clippers %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.75rem">
+    <div>
+      <a href="/clippers/{{ clipper.id }}" style="font-weight:600;font-size:15px;color:var(--text)">{{ clipper.name }}</a>
+      {% if not clipper.active %}<span class="badge badge-gray" style="margin-left:.5rem">Inactif</span>{% endif %}
+    </div>
+    <a href="/clippers/{{ clipper.id }}/evolution" class="btn btn-ghost btn-sm">📈 Évolution</a>
+  </div>
+  {% if clipper.notes %}<p class="muted" style="font-size:12px;margin-bottom:.75rem">{{ clipper.notes }}</p>{% endif %}
+  <div style="font-size:12px;color:var(--muted)">
+    {{ clipper.accounts | length }} compte(s) —
+    {% set total = namespace(v=0) %}
+    {% for acc in clipper.accounts %}{% set total.v = total.v + acc.latest_total_views %}{% endfor %}
+    {{ "{:,}".format(total.v) }} vues qualifiantes
+  </div>
+  <div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">
+    {% for acc in clipper.accounts %}
+    <span class="badge badge-{{ acc.platform.value[:2] }}" title="{{ acc.profile_url }}">
+      {{ acc.platform.value }} · {{ acc.handle }}
+    </span>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

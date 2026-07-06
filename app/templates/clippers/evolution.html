@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Évolution {{ clipper.name }} — PodcastOS{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div style="display:flex;align-items:center;gap:.75rem">
+    <a href="/clippers/{{ clipper.id }}" class="btn btn-ghost btn-sm">← Retour</a>
+    <h1 style="margin:0">Évolution — {{ clipper.name }}</h1>
+  </div>
+</div>
+
+<!-- Global clipper chart -->
+<div class="card" style="margin-bottom:1.25rem">
+  <h2>Vues qualifiantes cumulées (tous comptes)</h2>
+  {% if clipper_values | length >= 2 %}
+    {{ linechart(clipper_values, 960, 180, clipper_dates) }}
+  {% else %}
+    <p class="muted">Pas encore assez de données (minimum 2 jours).</p>
+  {% endif %}
+</div>
+
+<!-- Per account -->
+{% for acc_data in accounts %}
+<div class="card" style="margin-bottom:1.25rem">
+  <h2>
+    <span class="badge badge-{{ acc_data.account.platform.value[:2] }}">{{ acc_data.account.platform.value }}</span>
+    {{ acc_data.account.handle }}
+    <span class="muted" style="font-size:12px;font-weight:400">— {{ "{:,}".format(acc_data.account.latest_total_views) }} vues qualif.</span>
+  </h2>
+
+  {% if acc_data.values | length >= 2 %}
+    {{ linechart(acc_data.values, 800, 140, acc_data.dates) }}
+  {% else %}
+    <p class="muted" style="font-size:13px">Pas encore assez de données.</p>
+  {% endif %}
+
+  {% if acc_data.videos %}
+  <div style="margin-top:1.25rem">
+    <h3>Évolution par vidéo (top 20)</h3>
+    <table>
+      <thead><tr><th>Vidéo</th><th>Vues actuelles</th><th>Évolution</th></tr></thead>
+      <tbody>
+      {% for v in acc_data.videos %}
+      <tr>
+        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <a href="{{ v.video.url }}" target="_blank">{{ v.video.title or v.video.platform_video_id }}</a>
+        </td>
+        <td>{% if v.video.view_count %}{{ "{:,}".format(v.video.view_count) }}{% else %}—{% endif %}</td>
+        <td>
+          {% if v.points | length >= 2 %}
+            {{ sparkline(v.points) }}
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

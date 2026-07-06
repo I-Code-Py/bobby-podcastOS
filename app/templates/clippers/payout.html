@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Payouts — PodcastOS{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Payouts</h1>
+  {% if user.role == 'admin' %}
+  <form action="/clippers/payouts/generate" method="post">
+    <button class="btn btn-primary">+ Générer un cycle</button>
+  </form>
+  {% endif %}
+</div>
+
+<!-- Conversion rapide USD ↔ EUR -->
+<div class="card" style="margin-bottom:1.25rem;padding:.9rem 1.25rem">
+  <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Conversion rapide</span>
+    <div style="display:flex;align-items:center;gap:.75rem">
+      <label style="margin:0;font-size:13px;color:var(--muted)">$</label>
+      <input type="number" id="usd-input" step="0.01" min="0" placeholder="0.00"
+             style="width:110px;padding:.3rem .6rem" oninput="convertUSD(this.value)">
+      <span style="color:var(--muted)">→</span>
+      <span id="eur-result" style="font-weight:700;color:var(--text);min-width:80px">—</span>
+    </div>
+    <div style="width:1px;height:24px;background:var(--border)"></div>
+    <div style="display:flex;align-items:center;gap:.75rem">
+      <label style="margin:0;font-size:13px;color:var(--muted)">€</label>
+      <input type="number" id="eur-input" step="0.01" min="0" placeholder="0.00"
+             style="width:110px;padding:.3rem .6rem" oninput="convertEUR(this.value)">
+      <span style="color:var(--muted)">→</span>
+      <span id="usd-result" style="font-weight:700;color:var(--text);min-width:80px">—</span>
+    </div>
+    <span style="font-size:11px;color:var(--muted);margin-left:auto">1 USD = {{ "%.4f"|format(usd_eur) }} EUR</span>
+  </div>
+</div>
+
+{% if not cycles %}
+<div class="card muted" style="text-align:center;padding:2.5rem">
+  Aucun cycle de paiement. Cliquez sur "Générer un cycle" pour commencer.
+</div>
+{% else %}
+{% for cycle in cycles %}
+<div class="card" style="margin-bottom:1rem">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
+    <div>
+      <span style="font-weight:600">Cycle #{{ cycle.id }}</span>
+      <span class="muted" style="font-size:12px;margin-left:.75rem">
+        {{ cycle.period_start }} → {{ cycle.period_end }}
+        · créé le {{ cycle.created_at.strftime('%d/%m/%Y %H:%M') }}
+      </span>
+    </div>
+    <div style="display:flex;align-items:center;gap:1rem">
+      <div style="text-align:right">
+        <div style="font-weight:700;font-size:1.1rem">{{ "%.2f"|format(cycle.total_cents / 100) }} €</div>
+        <div style="font-size:11px;color:var(--muted)">≈ ${{ "%.2f"|format(cycle.total_cents / 100 / usd_eur) }}</div>
+      </div>
+      {% if cycle.paid_at %}
+        <span class="badge badge-green">Tout payé · {{ cycle.paid_at.strftime('%d/%m') }}</span>
+      {% else %}
+        {% set held_count = namespace(v=0) %}
+        {% for l in cycle.lines %}{% if l.held and not l.paid_at %}{% set held_count.v = held_count.v + 1 %}{% endif %}{% endfor %}
+        {% if held_count.v > 0 %}<span class="badge badge-yellow">{{ held_count.v }} bloqué(s)</span>{% endif %}
+        <span class="badge badge-yellow">En attente</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% for line in cycle.lines %}
+  <div style="border:1px solid {% if line.held and not line.paid_at %}rgba(234,179,8,.4){% elif line.paid_at %}rgba(34,197,94,.2){% else %}var(--border){% endif %};
+              background:{% if line.held and not line.paid_at %}rgba(234,179,8,.04){% elif line.paid_at %}rgba(34,197,94,.03){% else %}transparent{% endif %};
+              border-radius:8px;padding:.9rem 1rem;margin-bottom:.6rem">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;flex-wrap:wrap">
+          <span style="font-weight:600;font-size:15px">{{ line.clipper_name_snapshot }}</span>
+          {% if line.paid_at %}
+            <span class="badge badge-green">✓ Payé {{ line.paid_at.strftime('%d/%m') }}</span>
+          {% elif line.held %}
+            <span class="badge badge-yellow">⏸ Bloqué</span>
+          {% else %}
+            <span class="badge badge-gray">À payer</span>
+          {% endif %}
+        </div>
+
+        {% if line.held and line.hold_note %}
+        <div style="font-size:12px;color:var(--yellow);background:rgba(234,179,8,.1);
+                    border-radius:5px;padding:.3rem .7rem;margin-bottom:.4rem;display:inline-flex;align-items:center;gap:.4rem">
+          📝 {{ line.hold_note }}
+        </div>
+        {% endif %}
+
+        <div style="font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:.3rem;align-items:center">
+          {% for detail in line.account_details %}
+          <span class="badge badge-{{ detail.platform_snapshot[:2] }}">{{ detail.platform_snapshot }}</span>
+          <span>{{ detail.handle_snapshot }}</span>
+          <span style="color:var(--muted)">+{{ "{:,}".format(detail.delta_views) }} vues</span>
+          {% if not loop.last %}<span style="color:var(--border)">·</span>{% endif %}
+          {% endfor %}
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <div style="text-align:right">
+          <div style="font-weight:700;font-size:1.15rem">{{ "%.2f"|format(line.total_cents / 100) }} €</div>
+          <div style="font-size:11px;color:var(--muted)">≈ ${{ "%.2f"|format(line.total_cents / 100 / usd_eur) }}</div>
+        </div>
+
+        {% if user.role == 'admin' and not line.paid_at %}
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+          {% if line.held %}
+            <form action="/clippers/payouts/lines/{{ line.id }}/release" method="post" style="display:inline">
+              <button class="btn btn-ghost btn-sm">↩ Libérer</button>
+            </form>
+            <form action="/clippers/payouts/lines/{{ line.id }}/pay" method="post" style="display:inline"
+                  onsubmit="return confirm('Forcer le paiement de {{ line.clipper_name_snapshot }} malgré le blocage ?')">
+              <button class="btn btn-danger btn-sm">Forcer paiement</button>
+            </form>
+          {% else %}
+            <button class="btn btn-ghost btn-sm"
+                    onclick="showHoldForm({{ line.id }})" style="border-color:var(--yellow);color:var(--yellow)">
+              ⏸ Bloquer
+            </button>
+            {% if line.clipper and line.clipper.payment_link %}
+            <a href="{{ line.clipper.payment_link }}" target="_blank"
+               class="btn btn-ghost btn-sm" style="border-color:var(--accent);color:var(--accent2)">
+              🔗 Envoyer
+            </a>
+            {% endif %}
+            <form action="/clippers/payouts/lines/{{ line.id }}/pay" method="post" style="display:inline"
+                  onsubmit="return confirm('Marquer {{ line.clipper_name_snapshot }} payé ({{ \"%.2f\"|format(line.total_cents/100) }} €) ?')">
+              <button class="btn btn-primary btn-sm">💸 Payer</button>
+            </form>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if user.role == 'admin' and not line.paid_at and not line.held %}
+    <div id="hold-form-{{ line.id }}" style="display:none;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border)">
+      <form action="/clippers/payouts/lines/{{ line.id }}/hold" method="post">
+        <div style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <label>Note (raison du blocage)</label>
+            <input type="text" name="note" placeholder="Ex: En attente de vérification…" required>
+          </div>
+          <button class="btn btn-ghost btn-sm" style="border-color:var(--yellow);color:var(--yellow)">Confirmer blocage</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="hideHoldForm({{ line.id }})">Annuler</button>
+        </div>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endif %}
+
+<script>
+const USD_EUR = {{ usd_eur }};
+function convertUSD(val) {
+  const n = parseFloat(val);
+  document.getElementById('eur-result').textContent = isNaN(n) ? '—' : (n * USD_EUR).toFixed(2) + ' €';
+}
+function convertEUR(val) {
+  const n = parseFloat(val);
+  document.getElementById('usd-result').textContent = isNaN(n) ? '—' : (n / USD_EUR).toFixed(2) + ' $';
+}
+function showHoldForm(id) {
+  document.getElementById('hold-form-' + id).style.display = 'block';
+}
+function hideHoldForm(id) {
+  document.getElementById('hold-form-' + id).style.display = 'none';
+}
+</script>
+{% endblock %}

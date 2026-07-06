@@ -1,29 +1,19 @@
 FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /srv/app
+WORKDIR /app
 
 COPY requirements.txt .
-# --with-deps installe aussi les librairies système nécessaires à Chromium
-# (Instagram est scrapé via un navigateur headless, pas d'API officielle).
-RUN pip install --no-cache-dir -r requirements.txt \
-    && playwright install --with-deps chromium
+RUN pip install --no-cache-dir -r requirements.txt
+# Install Chromium for Playwright (Instagram scraping)
+RUN playwright install chromium --with-deps
 
-COPY alembic.ini .
-COPY alembic ./alembic
-COPY app ./app
+COPY . .
 
-RUN useradd --create-home --uid 1000 appuser \
-    && mkdir -p /srv/app/data \
-    && chown -R appuser:appuser /srv/app /ms-playwright
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health', timeout=3).raise_for_status()"
 
 CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"]
