@@ -3,7 +3,16 @@
 {% block content %}
 <div class="actions" style="justify-content: space-between;">
   <h1 style="margin:0">{{ clipper.name }}</h1>
-  <a href="/clippers/{{ clipper.id }}/evolution" class="btn">Voir l'évolution 📈</a>
+  <div class="actions">
+    <a href="/clippers/{{ clipper.id }}/evolution" class="btn">Voir l'évolution 📈</a>
+    {% if user.is_admin %}
+    <form method="post" action="/clippers/{{ clipper.id }}/delete" class="inline-form"
+          onsubmit="return confirm('Supprimer DÉFINITIVEMENT « {{ clipper.name }} » et tous ses comptes ? Cette action est irréversible. (Refusé automatiquement si un de ses comptes a déjà été payé.)')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn btn-danger">Supprimer le clippeur</button>
+    </form>
+    {% endif %}
+  </div>
 </div>
 
 <div class="stats">
@@ -74,6 +83,24 @@
           onsubmit="return confirm('Archiver ce compte ? Il ne sera plus suivi ni payé.')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <button type="submit" class="btn btn-sm btn-danger">Archiver</button>
+    </form>
+    {% if other_clippers %}
+    <form method="post" action="/accounts/{{ account.id }}/reassign" class="inline-form manual-views-form"
+          onsubmit="return confirm('Réassigner ce compte à ce clippeur ?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <select name="new_clipper_id" required>
+        <option value="" disabled selected>Réassigner à…</option>
+        {% for other in other_clippers %}
+        <option value="{{ other.id }}">{{ other.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-sm">Réassigner</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/accounts/{{ account.id }}/delete" class="inline-form"
+          onsubmit="return confirm('Supprimer DÉFINITIVEMENT ce compte et tout son historique de vues ? Cette action est irréversible. (Refusé automatiquement si ce compte a déjà été payé.)')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn btn-sm btn-danger">Supprimer</button>
     </form>
   </div>
   {% endif %}

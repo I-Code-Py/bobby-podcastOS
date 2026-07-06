@@ -1,7 +1,7 @@
 import re
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.modules.clippers.models import (
@@ -11,8 +11,11 @@ from app.modules.clippers.models import (
     PLATFORM_YOUTUBE,
     SNAPSHOT_SOURCE_MANUAL,
     Account,
+    AccountVideo,
+    AccountVideoSnapshot,
     AccountViewSnapshot,
     Clipper,
+    PayoutLineAccountSnapshot,
 )
 
 # Détection de la plateforme + du handle à partir de l'URL d'un profil/compte
@@ -93,4 +96,50 @@ def archive_account(db: Session, account: Account) -> None:
     from app.modules.clippers.models import ACCOUNT_STATUS_ARCHIVED
 
     account.status = ACCOUNT_STATUS_ARCHIVED
+    db.commit()
+
+
+def reassign_account(db: Session, account: Account, new_clipper: Clipper) -> None:
+    """Déplace un compte vers un autre clippeur (erreur d'assignation)."""
+    if new_clipper.id == account.clipper_id:
+        raise ValueError(f"Ce compte est déjà assigné à « {new_clipper.name} »")
+    account.clipper_id = new_clipper.id
+    db.commit()
+
+
+def _assert_account_deletable(db: Session, account: Account) -> None:
+    """Lève une erreur si le compte apparaît déjà dans un récap (payé ou en
+    attente) : le supprimer casserait une contrainte de clé étrangère et
+    ferait perdre l'historique de paiement."""
+    referenced = db.scalar(
+        select(PayoutLineAccountSnapshot.id)
+        .where(PayoutLineAccountSnapshot.account_id == account.id)
+        .limit(1)
+    )
+    if referenced:
+        raise ValueError(
+            "Ce compte apparaît déjà dans un récap de paiement : archivez-le "
+            "plutôt que de le supprimer, pour ne pas perdre l'historique."
+        )
+
+
+def _delete_account_no_commit(db: Session, account: Account) -> None:
+    """Purge l'historique du compte puis le compte lui-même, sans committer
+    (permet d'enchaîner plusieurs suppressions dans une seule transaction,
+    ex. lors de la suppression d'un clippeur entier)."""
+    video_ids = select(AccountVideo.id).where(AccountVideo.account_id == account.id)
+    db.execute(delete(AccountVideoSnapshot).where(
+        AccountVideoSnapshot.account_video_id.in_(video_ids)
+    ))
+    db.execute(delete(AccountVideo).where(AccountVideo.account_id == account.id))
+    db.execute(delete(AccountViewSnapshot).where(AccountViewSnapshot.account_id == account.id))
+    db.delete(account)
+
+
+def delete_account(db: Session, account: Account) -> None:
+    """Supprime définitivement le compte et tout son historique de vues et
+    de vidéos. Refuse si le compte a déjà été inclus dans un récap (payé ou
+    en attente) — dans ce cas, utilisez l'archivage à la place."""
+    _assert_account_deletable(db, account)
+    _delete_account_no_commit(db, account)
     db.commit()

@@ -14,10 +14,11 @@ monolithe modulaire : les prochains modules s'ajouteront sous `app/modules/`).
 - **Clippeur** → on lui assigne un ou plusieurs **comptes** (une URL de profil
   par plateforme). Un même clippeur peut avoir plusieurs comptes.
 - **Vues** : toutes les vidéos publiques de chaque compte sont scrapées chaque
-  nuit à 3h via **yt-dlp** (sans connexion à un compte, donc aucun risque de
-  ban). Le total du compte = somme des vues de ses vidéos. Si le scraping
-  échoue 3 fois (typiquement Instagram), le compte bascule en **saisie
-  manuelle** : on entre le total de vues à la main.
+  nuit à 3h — YouTube/TikTok via **yt-dlp**, Instagram via un **navigateur
+  headless** (Playwright, page publique du profil + scroll, comme un
+  visiteur normal). Aucune connexion à un compte, donc aucun risque de ban.
+  Le total du compte = somme des vues de ses vidéos. Si le scraping échoue
+  3 fois, le compte bascule en **saisie manuelle** : on entre le total à la main.
 - **Seuil de comptabilisation** : les vidéos sous un seuil de vues (défaut
   **1000**, réglable dans Paramètres) ne sont pas comptées dans le total ni
   dans les paiements.
@@ -90,11 +91,14 @@ python -m pytest tests/
 
 ## Limites connues
 
-- Le scraping (yt-dlp) peut casser quand une plateforme change son site,
-  surtout **Instagram** (lister toutes les vidéos d'un profil sans connexion y
-  est le plus fragile). Le compte bascule alors en « à saisir manuellement »
-  avec un badge dans l'UI ; on entre le total de vues à la main et un bouton
-  « Rafraîchir » retente le scraping. YouTube et TikTok sont plus fiables.
+- Le scraping peut casser quand une plateforme change son site (structure HTML
+  ou API interne). Le compte bascule alors en « à saisir manuellement » avec
+  un badge dans l'UI ; on entre le total de vues à la main et un bouton
+  « Rafraîchir » retente le scraping.
+- Instagram tourne via un navigateur headless (Playwright + Chromium) plutôt
+  que yt-dlp : plus fiable pour lister un profil sans compte, mais plus lourd
+  (image Docker plus grosse, build plus long, plus de mémoire au scraping).
+  Reste le connecteur le plus fragile des trois si Instagram change sa page.
 - Le total d'un compte dépend de ce que le scraping remonte : si une plateforme
   ne renvoie qu'une partie des vidéos, le total est sous-estimé. Le nombre de
   vidéos suivies est affiché sur la fiche du compte pour repérer un écart.

@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     youtube_api_key: str = ""
     scrape_delay_seconds: float = 5.0
     instagram_delay_seconds: float = 12.0
+    # Fichier de cookies (format Netscape) exporté depuis un navigateur connecté.
+    # Indispensable pour Instagram : yt-dlp ne peut pas lister les vidéos d'un
+    # profil de façon anonyme (Instagram bloque cet accès sans session).
+    cookies_file: str = ""
 
     timezone: str = "Europe/Paris"
     scheduler_enabled: bool = True

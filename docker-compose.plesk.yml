@@ -18,6 +18,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - ./data:/srv/app/data
     # Publié uniquement sur la boucle locale : seul le nginx de Plesk
     # (même machine) peut l'atteindre, jamais l'Internet en direct.
     ports:

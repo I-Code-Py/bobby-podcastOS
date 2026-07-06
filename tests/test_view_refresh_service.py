@@ -23,7 +23,7 @@ def _account(db) -> Account:
 
 def _patch_fetch(monkeypatch, result):
     # On remplace le wrapper avec retry pour éviter les temporisations tenacity
-    def fake(profile_url):
+    def fake(profile_url, platform):
         if isinstance(result, Exception):
             raise result
         return result

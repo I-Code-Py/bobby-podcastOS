@@ -1,19 +1,23 @@
-"""Scraping de toutes les vidéos publiques d'un compte, via yt-dlp.
+"""Scraping des vidéos d'un compte YouTube ou TikTok, via yt-dlp.
 
-yt-dlp sait lister l'ensemble des vidéos d'une chaîne YouTube, d'un profil
-TikTok ou d'un profil Instagram sans authentification, et renvoie pour chacune
-son nombre de vues. On utilise l'extraction « à plat » (extract_flat) : un seul
-appel réseau par compte, yt-dlp paginant en interne.
+yt-dlp sait lister l'ensemble des vidéos d'une chaîne YouTube ou d'un profil
+TikTok, et renvoie pour chacune son nombre de vues. On utilise l'extraction
+« à plat » (extract_flat) : un seul appel réseau par compte, yt-dlp paginant
+en interne.
 
-Limites connues :
-  - Instagram est le plus fragile (yt-dlp peut réclamer des cookies pour
-    lister un profil) → repli en saisie manuelle du total dans l'UI.
-  - Le nombre de vues peut manquer pour certaines vidéos selon la plateforme ;
-    elles comptent alors pour 0 dans le total (mais restent enregistrées).
+Instagram n'utilise PAS ce module : yt-dlp ne peut pas lister les posts d'un
+profil Instagram de façon anonyme (erreur "login required" systématique).
+Voir connectors/instagram_playwright.py, qui scrape la page publique via un
+navigateur headless (comme un visiteur normal, sans compte).
+
+Le réglage `COOKIES_FILE` (fichier de cookies au format Netscape) reste
+disponible pour fiabiliser YouTube/TikTok si besoin, mais n'est pas requis.
 """
 
+import os
 from datetime import datetime
 
+from app.config import get_settings
 from app.modules.clippers.connectors.base import VideoInfo
 from app.modules.clippers.connectors.errors import (
     ConnectorError,
@@ -48,7 +52,7 @@ def _entry_to_video_info(entry: dict) -> VideoInfo | None:
 
 
 def _build_ydl_options() -> dict:
-    return {
+    options = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
@@ -56,6 +60,10 @@ def _build_ydl_options() -> dict:
         "ignoreerrors": True,
         "socket_timeout": 30,
     }
+    cookies_file = get_settings().cookies_file
+    if cookies_file and os.path.isfile(cookies_file):
+        options["cookiefile"] = cookies_file
+    return options
 
 
 def fetch_account_videos(profile_url: str) -> list[VideoInfo]:

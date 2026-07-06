@@ -1,6 +1,7 @@
 import pytest
 
 from app.modules.clippers.connectors.account_videos import _entry_to_video_info
+from app.modules.clippers.connectors.instagram_playwright import _parse_count
 from app.modules.clippers.services.account_service import detect_account
 
 
@@ -61,3 +62,23 @@ class TestEntryToVideoInfo:
 
     def test_entry_without_id_is_skipped(self):
         assert _entry_to_video_info({"title": "orphelin"}) is None
+
+
+class TestParseCount:
+    def test_plain_number(self):
+        assert _parse_count("834") == 834
+
+    def test_number_with_thousands_comma(self):
+        assert _parse_count("12,345") == 12345
+
+    def test_k_suffix(self):
+        assert _parse_count("1.2K") == 1200
+
+    def test_m_suffix(self):
+        assert _parse_count("3.4M") == 3400000
+
+    def test_french_decimal_comma_with_suffix(self):
+        assert _parse_count("12,3 K") == 12300
+
+    def test_unrecognized_text_is_none(self):
+        assert _parse_count("j'aime") is None

@@ -16,6 +16,9 @@ from app.core.settings_service import get_min_views_per_video
 from app.modules.clippers.connectors.account_videos import fetch_account_videos
 from app.modules.clippers.connectors.base import VideoInfo
 from app.modules.clippers.connectors.errors import ConnectorError, RateLimitedError
+from app.modules.clippers.connectors.instagram_playwright import (
+    fetch_instagram_profile_videos,
+)
 from app.modules.clippers.models import (
     ACCOUNT_STATUS_ACTIVE,
     ACCOUNT_STATUS_MANUAL_REQUIRED,
@@ -37,7 +40,12 @@ logger = logging.getLogger(__name__)
     wait=wait_exponential(multiplier=2, max=30),
     reraise=True,
 )
-def _fetch_with_retry(profile_url: str) -> list[VideoInfo]:
+def _fetch_with_retry(profile_url: str, platform: str) -> list[VideoInfo]:
+    # Instagram bloque le listing anonyme via yt-dlp (login required
+    # systématique) : on passe par un navigateur headless à la place, qui
+    # accède à la page publique du profil comme un visiteur normal.
+    if platform == PLATFORM_INSTAGRAM:
+        return fetch_instagram_profile_videos(profile_url)
     return fetch_account_videos(profile_url)
 
 
@@ -119,7 +127,7 @@ def refresh_account(db: Session, account: Account,
     captured_at = captured_at or date.today()
     min_views = get_min_views_per_video(db)
     try:
-        videos = _fetch_with_retry(account.profile_url)
+        videos = _fetch_with_retry(account.profile_url, account.platform)
     except Exception as exc:  # noqa: BLE001 — tout échec suit le même chemin
         _apply_failure(db, account, exc)
         return False
