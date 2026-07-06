@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Récap #{{ cycle.id }}{% endblock %}
+{% block content %}
+<h1>Récap #{{ cycle.id }} — semaine du {{ cycle.week_start_date.strftime('%d/%m') }} au {{ cycle.week_end_date.strftime('%d/%m/%Y') }}</h1>
+
+<div class="stats">
+  <div class="stat"><div class="value">{{ total_cents | euros }}</div><div class="label">Total à payer (hors remplacés)</div></div>
+</div>
+
+{% for line in lines %}
+<div class="card">
+  <div class="actions" style="justify-content: space-between;">
+    <h2 style="margin:0">
+      <a href="/clippers/{{ line.clipper_id }}">{{ line.clipper.name }}</a>
+      — {{ line.amount_due_cents | euros }}
+      <span class="muted">({{ line.delta_views | views }} nouvelles vues)</span>
+    </h2>
+    <div class="actions">
+      <span class="badge badge-{{ line.status }}">
+        {% if line.status == 'paid' %}payé le {{ line.paid_at.strftime('%d/%m/%Y') }}
+        {% elif line.status == 'superseded' %}remplacé par un récap plus récent
+        {% else %}en attente de paiement{% endif %}
+      </span>
+      {% if user.is_admin and line.status == 'pending' %}
+      <form method="post" action="/payouts/lines/{{ line.id }}/mark-paid" class="inline-form"
+            onsubmit="return confirm('Confirmer le paiement de {{ line.clipper.name }} ? Les vues comptées seront figées.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <button type="submit" class="btn btn-success">Marquer payé</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% if line.account_details %}
+  <table style="margin-top:0.75rem">
+    <thead>
+      <tr><th>Compte</th><th class="num">Nouvelles vues</th><th class="num">Montant</th></tr>
+    </thead>
+    <tbody>
+      {% for detail in line.account_details %}
+      <tr>
+        <td>{{ detail.account.platform_label }}{% if detail.account.handle %} {{ detail.account.handle }}{% endif %}</td>
+        <td class="num">{{ detail.delta_views | views }}</td>
+        <td class="num">{{ detail.amount_cents | euros }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Aucune nouvelle vue sur la période.</p>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

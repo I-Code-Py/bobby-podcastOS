@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Clippeurs{% endblock %}
+{% block content %}
+<h1>Clippeurs</h1>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Nom</th>
+        <th class="num">Comptes</th>
+        <th class="num">Vues totales</th>
+        <th class="num">Vues non payées</th>
+        <th class="num">Montant dû (estimation)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <a href="/clippers/{{ row.clipper.id }}">{{ row.clipper.name }}</a>
+          {% if not row.clipper.active %}<span class="badge badge-muted">inactif</span>{% endif %}
+        </td>
+        <td class="num">{{ row.account_count }}</td>
+        <td class="num">{{ row.total_views | views }}</td>
+        <td class="num">{{ row.unpaid_views | views }}</td>
+        <td class="num"><strong>{{ row.unpaid_cents | euros }}</strong></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">Aucun clippeur pour l'instant — ajoutez le premier ci-dessous.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if user.is_admin %}
+<div class="card">
+  <h2>Ajouter un clippeur</h2>
+  <form method="post" action="/clippers">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <label>Nom *
+      <input type="text" name="name" required>
+    </label>
+    <label>Notes
+      <textarea name="notes"></textarea>
+    </label>
+    <button type="submit" class="btn btn-primary">Créer le clippeur</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

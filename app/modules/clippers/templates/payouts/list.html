@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Récaps{% endblock %}
+{% block content %}
+<h1>Récaps hebdomadaires</h1>
+<p class="muted">Générés automatiquement chaque dimanche à 18h. Chaque récap calcule les
+vues gagnées depuis le dernier paiement de chaque clippeur.</p>
+
+{% if user.is_admin %}
+<form method="post" action="/payouts/generate" class="inline-form" style="margin-bottom:1rem">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="btn btn-primary">Générer un récap maintenant</button>
+</form>
+{% endif %}
+
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>Récap</th><th>Semaine</th><th>Généré le</th><th class="num">Clippeurs</th></tr>
+    </thead>
+    <tbody>
+      {% for cycle in cycles %}
+      <tr>
+        <td><a href="/payouts/{{ cycle.id }}">Récap #{{ cycle.id }}</a></td>
+        <td>{{ cycle.week_start_date.strftime('%d/%m') }} → {{ cycle.week_end_date.strftime('%d/%m/%Y') }}</td>
+        <td class="muted">{{ cycle.generated_at.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td class="num">{{ cycle.lines | length }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">Aucun récap généré pour l'instant.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

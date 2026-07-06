@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}{{ clipper.name }}{% endblock %}
+{% block content %}
+<div class="actions" style="justify-content: space-between;">
+  <h1 style="margin:0">{{ clipper.name }}</h1>
+  <a href="/clippers/{{ clipper.id }}/evolution" class="btn">Voir l'évolution 📈</a>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="value">{{ total_views | views }}</div><div class="label">Vues comptabilisées</div></div>
+  <div class="stat"><div class="value">{{ unpaid_views | views }}</div><div class="label">Vues non payées</div></div>
+  <div class="stat"><div class="value">{{ unpaid_cents | euros }}</div><div class="label">Montant dû (estimation)</div></div>
+</div>
+<p class="muted">Seuil de comptabilisation : les vidéos sous {{ min_views | views }} vues ne sont pas comptées (modifiable dans Paramètres).</p>
+
+{% if clipper.notes %}<p class="muted">{{ clipper.notes }}</p>{% endif %}
+
+{% if user.is_admin %}
+<div class="card">
+  <h2>Assigner un compte</h2>
+  <p class="muted">Colle l'URL du profil du clippeur (chaîne YouTube, profil
+  TikTok ou Instagram). Toutes ses vidéos sont scrapées et leurs vues sommées.</p>
+  <form method="post" action="/clippers/{{ clipper.id }}/accounts" class="actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <input type="url" name="url" required style="flex:1; margin-top:0"
+           placeholder="https://youtube.com/@… · https://tiktok.com/@… · https://instagram.com/…">
+    <button type="submit" class="btn btn-primary">Ajouter le compte</button>
+  </form>
+</div>
+{% endif %}
+
+<h2>Comptes ({{ accounts | length }})</h2>
+{% for account in accounts %}
+<div class="clip-card">
+  <div class="actions" style="justify-content: space-between;">
+    <h3 style="margin:0">
+      {{ account.platform_label }}
+      {% if account.handle %}<span class="muted">{{ account.handle }}</span>{% endif %}
+      — <a href="{{ account.profile_url }}" target="_blank" rel="noopener">profil ↗</a>
+    </h3>
+    <div>
+      {% if account.status == 'manual_required' %}
+        <span class="badge badge-warn" title="{{ account.last_fetch_error }}">à saisir manuellement</span>
+      {% elif account.last_fetch_status == 'error' %}
+        <span class="badge badge-error" title="{{ account.last_fetch_error }}">erreur de scraping</span>
+      {% elif account.last_fetch_status == 'manual' %}
+        <span class="badge badge-muted">manuel</span>
+      {% elif account.last_fetch_status == 'ok' %}
+        <span class="badge badge-ok">auto</span>
+      {% else %}
+        <span class="badge badge-muted">jamais scrapé</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stats" style="margin:0.6rem 0">
+    <div class="stat"><div class="value">{{ account.latest_total_views | views }}</div><div class="label">Vues du compte</div></div>
+    <div class="stat"><div class="value">{{ account.latest_video_count }}</div><div class="label">Vidéos suivies</div></div>
+  </div>
+  <p class="muted">Dernier scraping : {{ account.last_fetch_at.strftime('%d/%m %H:%M') if account.last_fetch_at else '—' }}</p>
+
+  {% if user.is_admin %}
+  <div class="actions">
+    <form method="post" action="/accounts/{{ account.id }}/refresh" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn btn-sm">Rafraîchir</button>
+    </form>
+    <form method="post" action="/accounts/{{ account.id }}/manual-views" class="manual-views-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="number" name="total_views" min="0" placeholder="total vues" required>
+      <button type="submit" class="btn btn-sm">Saisir le total</button>
+    </form>
+    <form method="post" action="/accounts/{{ account.id }}/archive" class="inline-form"
+          onsubmit="return confirm('Archiver ce compte ? Il ne sera plus suivi ni payé.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn btn-sm btn-danger">Archiver</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if account.videos %}
+  <details style="margin-top:0.6rem">
+    <summary class="muted">Voir les {{ account.videos | length }} vidéos scrapées</summary>
+    <table style="margin-top:0.5rem">
+      <thead><tr><th>Vidéo</th><th class="num">Vues</th><th></th></tr></thead>
+      <tbody>
+        {% for video in account.videos | sort(attribute='view_count', reverse=true) %}
+        <tr>
+          <td>
+            {% if video.url %}<a href="{{ video.url }}" target="_blank" rel="noopener">{{ video.title or video.platform_video_id }}</a>
+            {% else %}{{ video.title or video.platform_video_id }}{% endif %}
+          </td>
+          <td class="num">{{ video.view_count | views }}</td>
+          <td>{% if (video.view_count or 0) < min_views %}<span class="badge badge-muted">non comptabilisée</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+</div>
+{% else %}
+<p class="muted">Aucun compte assigné à ce clippeur.</p>
+{% endfor %}
+{% endblock %}

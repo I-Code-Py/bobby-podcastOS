@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Paramètres{% endblock %}
+{% block content %}
+<h1>Paramètres</h1>
+
+<div class="card">
+  <h2>Taux de rémunération</h2>
+  <p>Taux actuel : <strong>{{ rate_cents | euros }} / 1000 vues</strong></p>
+  {% if user.is_admin %}
+  <form method="post" action="/settings/rate" class="actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <input type="number" name="rate_euros" step="0.01" min="0.01"
+           value="{{ '%.2f' | format(rate_cents / 100) }}" style="width:120px; margin-top:0">
+    <span>€ / 1000 vues</span>
+    <button type="submit" class="btn btn-primary">Enregistrer</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Seuil de comptabilisation</h2>
+  <p>Les vidéos ayant <strong>moins de {{ min_views | views }} vues</strong> ne sont
+  pas comptabilisées dans le total ni dans les paiements.</p>
+  {% if user.is_admin %}
+  <form method="post" action="/settings/min-views" class="actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <input type="number" name="min_views" min="0" step="1"
+           value="{{ min_views }}" style="width:140px; margin-top:0">
+    <span>vues minimum par vidéo</span>
+    <button type="submit" class="btn btn-primary">Enregistrer</button>
+  </form>
+  <p class="muted">Le nouveau seuil s'applique aux prochains scrapings (chaque nuit
+  ou via « Rafraîchir les vues maintenant »).</p>
+  {% endif %}
+</div>
+
+{% if user.is_admin %}
+<div class="card">
+  <h2>Actions manuelles</h2>
+  <p class="muted">Ces actions tournent aussi automatiquement : rafraîchissement des vues
+  chaque nuit à 3h, récap chaque dimanche à 18h.</p>
+  <div class="actions">
+    <form method="post" action="/settings/refresh-now" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn">Rafraîchir les vues maintenant</button>
+    </form>
+    <form method="post" action="/settings/payout-now" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn">Générer le récap maintenant</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Utilisateurs</h2>
+  <table>
+    <thead><tr><th>Email</th><th>Rôle</th><th>Statut</th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.email }}</td>
+        <td>{{ u.role }}</td>
+        <td>{% if u.active %}<span class="badge badge-ok">actif</span>{% else %}<span class="badge badge-muted">désactivé</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h2 style="margin-top:1rem">Ajouter un utilisateur</h2>
+  <form method="post" action="/settings/users">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <div class="grid-2">
+      <label>Email
+        <input type="email" name="email" required>
+      </label>
+      <label>Mot de passe (min. 10 caractères)
+        <input type="password" name="password" minlength="10" required>
+      </label>
+    </div>
+    <label>Rôle
+      <select name="role">
+        <option value="viewer">Lecture seule</option>
+        <option value="admin">Administrateur</option>
+      </select>
+    </label>
+    <button type="submit" class="btn btn-primary">Créer l'utilisateur</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

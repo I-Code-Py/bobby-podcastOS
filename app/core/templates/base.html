@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Clip Payout{% endblock %} — Bobby San Podcast</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="brand">🎙️ Bobby San — Clip Payout</span>
+    {% if user %}
+    <nav>
+      <a href="/clippers">Clippeurs</a>
+      <a href="/payouts">Récaps</a>
+      <a href="/settings">Paramètres</a>
+    </nav>
+    <form method="post" action="/logout" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn btn-ghost">Déconnexion ({{ user.email }})</button>
+    </form>
+    {% endif %}
+  </div>
+</header>
+<main class="container">
+  {% for f in get_flashes(request) %}
+    <div class="flash flash-{{ f.category }}">{{ f.message }}</div>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

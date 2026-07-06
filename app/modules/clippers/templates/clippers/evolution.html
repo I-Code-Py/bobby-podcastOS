@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Évolution — {{ clipper.name }}{% endblock %}
+{% block content %}
+<p><a href="/clippers/{{ clipper.id }}">← {{ clipper.name }}</a></p>
+<h1>Évolution des vues — {{ clipper.name }}</h1>
+
+<div class="card">
+  <h2>Total du clippeur (jour par jour)</h2>
+  <div class="chart-wrap">{{ linechart(clipper_values) }}</div>
+  {% if clipper_series %}
+  <p class="muted">
+    Du {{ clipper_series[0][0].strftime('%d/%m/%Y') }}
+    ({{ clipper_series[0][1] | views }} vues)
+    au {{ clipper_series[-1][0].strftime('%d/%m/%Y') }}
+    (<strong>{{ clipper_series[-1][1] | views }} vues</strong>).
+  </p>
+  {% endif %}
+</div>
+
+{% for row in accounts %}
+<div class="card">
+  <div class="actions" style="justify-content: space-between;">
+    <h2 style="margin:0">
+      {{ row.account.platform_label }}
+      {% if row.account.handle %}<span class="muted">{{ row.account.handle }}</span>{% endif %}
+    </h2>
+    <span class="muted">{{ row.account.latest_total_views | views }} vues comptabilisées</span>
+  </div>
+  <div class="chart-wrap">{{ linechart(row['values']) }}</div>
+
+  <h3>Évolution par vidéo</h3>
+  {% if row.videos %}
+  <table>
+    <thead>
+      <tr><th>Vidéo</th><th>Tendance</th><th class="num">Vues actuelles</th><th class="num">Croissance</th></tr>
+    </thead>
+    <tbody>
+      {% for v in row.videos %}
+      <tr>
+        <td>
+          {% if v.video.url %}<a href="{{ v.video.url }}" target="_blank" rel="noopener">{{ v.video.title or v.video.platform_video_id }}</a>
+          {% else %}{{ v.video.title or v.video.platform_video_id }}{% endif %}
+        </td>
+        <td class="spark-cell">{{ sparkline(v.points) }}</td>
+        <td class="num">{{ v.current | views }}</td>
+        <td class="num">{% if v.growth > 0 %}<span class="up">+{{ v.growth | views }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Aucune vidéo scrapée pour ce compte.</p>
+  {% endif %}
+</div>
+{% else %}
+<p class="muted">Aucun compte assigné.</p>
+{% endfor %}
+{% endblock %}
