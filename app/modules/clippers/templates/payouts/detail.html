@@ -22,6 +22,12 @@
         {% else %}en attente de paiement{% endif %}
       </span>
       {% if user.is_admin and line.status == 'pending' %}
+      {% set link = pay_link(line.clipper, line.amount_due_cents) %}
+      {% if link %}
+      <a href="{{ link }}" target="_blank" rel="noopener" class="btn btn-primary">
+        💸 Payer {{ line.amount_due_cents | euros }} ({{ line.clipper.payment_method_label }})
+      </a>
+      {% endif %}
       <form method="post" action="/payouts/lines/{{ line.id }}/mark-paid" class="inline-form"
             onsubmit="return confirm('Confirmer le paiement de {{ line.clipper.name }} ? Les vues comptées seront figées.')">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">

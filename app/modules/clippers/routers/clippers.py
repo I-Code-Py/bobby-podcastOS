@@ -88,6 +88,30 @@ def delete_clipper(clipper_id: int, request: Request, db: Session = Depends(get_
     return RedirectResponse("/clippers", status_code=303)
 
 
+@router.post("/{clipper_id}/payment")
+def set_payment(clipper_id: int, request: Request,
+                method: str = Form(""),
+                handle: str = Form(""),
+                db: Session = Depends(get_db),
+                user=Depends(require_admin),
+                _csrf: None = Depends(verify_csrf)):
+    clipper = clipper_service.get_clipper(db, clipper_id)
+    if clipper is None:
+        raise HTTPException(status_code=404)
+    try:
+        clipper_service.set_payment_info(db, clipper, method, handle)
+    except ValueError as exc:
+        flash(request, str(exc), "error")
+        return RedirectResponse(f"/clippers/{clipper_id}", status_code=303)
+    if clipper.payment_method:
+        flash(request, f"Moyen de paiement enregistré : "
+                       f"{clipper.payment_method_label} — {clipper.payment_handle}.",
+              "success")
+    else:
+        flash(request, "Moyen de paiement retiré.", "success")
+    return RedirectResponse(f"/clippers/{clipper_id}", status_code=303)
+
+
 @router.get("/{clipper_id}/evolution")
 def clipper_evolution(clipper_id: int, request: Request,
                       db: Session = Depends(get_db),

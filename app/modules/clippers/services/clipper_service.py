@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.modules.clippers.models import (
     ACCOUNT_STATUS_ARCHIVED,
+    PAYMENT_METHODS,
     Account,
     Clipper,
 )
@@ -48,6 +49,26 @@ def create_clipper(db: Session, name: str, notes: str | None = None) -> Clipper:
     db.commit()
     db.refresh(clipper)
     return clipper
+
+
+def set_payment_info(db: Session, clipper: Clipper, method: str | None,
+                     handle: str | None) -> None:
+    """Enregistre le moyen de paiement du clippeur. Une méthode vide efface le
+    moyen de paiement existant."""
+    from app.modules.clippers.services import payment_service
+
+    method = (method or "").strip().lower()
+    if method not in PAYMENT_METHODS:
+        clipper.payment_method = None
+        clipper.payment_handle = None
+        db.commit()
+        return
+    normalized = payment_service.normalize_handle(handle)
+    if not normalized:
+        raise ValueError("Le pseudo (ou le lien de paiement) est obligatoire")
+    clipper.payment_method = method
+    clipper.payment_handle = normalized
+    db.commit()
 
 
 def total_views(clipper: Clipper) -> int:

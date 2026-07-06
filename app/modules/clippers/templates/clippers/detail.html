@@ -22,9 +22,39 @@
 </div>
 <p class="muted">Seuil de comptabilisation : les vidéos sous {{ min_views | views }} vues ne sont pas comptées (modifiable dans Paramètres).</p>
 
+{% set link = pay_link(clipper, unpaid_cents) %}
+{% if link %}
+<div class="actions" style="margin-bottom:1rem">
+  <a href="{{ link }}" target="_blank" rel="noopener" class="btn btn-success">
+    💸 Payer {{ unpaid_cents | euros }} via {{ clipper.payment_method_label }}
+  </a>
+</div>
+{% endif %}
+
 {% if clipper.notes %}<p class="muted">{{ clipper.notes }}</p>{% endif %}
 
 {% if user.is_admin %}
+<div class="card">
+  <h2>Moyen de paiement</h2>
+  <p class="muted">Renseigne le pseudo PayPal ou Revolut du clippeur (ou colle
+  son lien <code>paypal.me</code> / <code>revolut.me</code>). Un bouton de
+  paiement pré-rempli avec le montant dû apparaît ici et sur chaque récap.</p>
+  <form method="post" action="/clippers/{{ clipper.id }}/payment" class="actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <select name="method">
+      <option value="" {% if not clipper.payment_method %}selected{% endif %}>— Aucun —</option>
+      <option value="paypal" {% if clipper.payment_method == 'paypal' %}selected{% endif %}>PayPal</option>
+      <option value="revolut" {% if clipper.payment_method == 'revolut' %}selected{% endif %}>Revolut</option>
+    </select>
+    <input type="text" name="handle" value="{{ clipper.payment_handle or '' }}"
+           placeholder="pseudo ou lien paypal.me / revolut.me" style="flex:1; margin-top:0">
+    <button type="submit" class="btn btn-primary">Enregistrer</button>
+  </form>
+  {% if clipper.payment_method %}
+  <p class="muted">Actuel : {{ clipper.payment_method_label }} — <code>{{ clipper.payment_handle }}</code></p>
+  {% endif %}
+</div>
+
 <div class="card">
   <h2>Assigner un compte</h2>
   <p class="muted">Colle l'URL du profil du clippeur (chaîne YouTube, profil

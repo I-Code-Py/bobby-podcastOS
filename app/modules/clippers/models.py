@@ -35,6 +35,12 @@ PAYOUT_PENDING = "pending"
 PAYOUT_PAID = "paid"
 PAYOUT_SUPERSEDED = "superseded"
 
+# Moyens de paiement d'un clippeur (pour générer un lien de paiement pré-rempli)
+PAYMENT_PAYPAL = "paypal"
+PAYMENT_REVOLUT = "revolut"
+PAYMENT_METHODS = (PAYMENT_PAYPAL, PAYMENT_REVOLUT)
+PAYMENT_METHOD_LABELS = {PAYMENT_PAYPAL: "PayPal", PAYMENT_REVOLUT: "Revolut"}
+
 SNAPSHOT_SOURCE_AUTO = "auto"
 SNAPSHOT_SOURCE_MANUAL = "manual"
 
@@ -50,9 +56,16 @@ class Clipper(Base):
     name: Mapped[str] = mapped_column(String(200), unique=True)
     notes: Mapped[str | None] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Paiement : méthode ("paypal"/"revolut") + pseudo (ou identifiant du lien)
+    payment_method: Mapped[str | None] = mapped_column(String(20))
+    payment_handle: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     accounts: Mapped[list["Account"]] = relationship(back_populates="clipper")
+
+    @property
+    def payment_method_label(self) -> str | None:
+        return PAYMENT_METHOD_LABELS.get(self.payment_method) if self.payment_method else None
 
 
 class Account(Base):

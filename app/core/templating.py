@@ -92,3 +92,15 @@ templates.env.globals["csrf_token"] = get_csrf_token
 templates.env.globals["get_flashes"] = pop_flashes
 templates.env.globals["sparkline"] = sparkline
 templates.env.globals["linechart"] = linechart
+
+
+def pay_link(clipper, amount_cents: int):
+    """Lien de paiement pré-rempli (PayPal/Revolut) pour ce clippeur et ce
+    montant, ou None. Import différé pour éviter de coupler core au module."""
+    from app.modules.clippers.services.payment_service import build_payment_link
+
+    return build_payment_link(clipper.payment_method, clipper.payment_handle,
+                              amount_cents)
+
+
+templates.env.globals["pay_link"] = pay_link
