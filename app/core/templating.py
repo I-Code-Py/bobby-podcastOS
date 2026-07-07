@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from jinja2 import ChoiceLoader, FileSystemLoader
 from markupsafe import Markup
 
+from app.config import APP_VERSION
 from app.core.auth.csrf import get_csrf_token
 
 CORE_TEMPLATES = Path(__file__).parent / "templates"
@@ -92,6 +93,7 @@ templates.env.globals["csrf_token"] = get_csrf_token
 templates.env.globals["get_flashes"] = pop_flashes
 templates.env.globals["sparkline"] = sparkline
 templates.env.globals["linechart"] = linechart
+templates.env.globals["app_version"] = APP_VERSION
 
 
 def pay_link(clipper, amount_cents: int):

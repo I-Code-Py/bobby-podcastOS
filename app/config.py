@@ -2,6 +2,10 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Version applicative, affichée dans le footer. À incrémenter à chaque
+# déploiement pour vérifier d'un coup d'œil quelle version tourne en prod.
+APP_VERSION = "1.0.2"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -14,9 +18,16 @@ class Settings(BaseSettings):
     scrape_delay_seconds: float = 5.0
     instagram_delay_seconds: float = 12.0
     # Fichier de cookies (format Netscape) exporté depuis un navigateur connecté.
-    # Indispensable pour Instagram : yt-dlp ne peut pas lister les vidéos d'un
-    # profil de façon anonyme (Instagram bloque cet accès sans session).
+    # Optionnel : fiabilise YouTube/TikTok via yt-dlp si besoin.
     cookies_file: str = ""
+
+    # Fichier de cookies (format Netscape) d'un compte Instagram CONNECTÉ.
+    # Indispensable : Instagram bloque désormais l'accès anonyme aux profils
+    # depuis une IP datacenter (HTTP 429 + redirection vers /accounts/login).
+    # Exporte un cookies.txt depuis un navigateur où tu es connecté à Instagram
+    # (extension « Get cookies.txt ») et pointe ce réglage sur son chemin dans
+    # le conteneur, ex : /srv/app/data/instagram_cookies.txt
+    instagram_cookies_file: str = ""
 
     timezone: str = "Europe/Paris"
     scheduler_enabled: bool = True

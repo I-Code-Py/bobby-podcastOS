@@ -109,3 +109,15 @@ textarea { min-height: 4.5rem; }
 .spark-cell { color: var(--primary); width: 150px; }
 .spark-cell .chart { display: block; }
 .up { color: var(--success); font-weight: 600; }
+
+/* Version applicative, discrète en bas à droite */
+.app-footer {
+  position: fixed;
+  right: 0.6rem;
+  bottom: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  opacity: 0.7;
+  pointer-events: none;
+  user-select: none;
+}

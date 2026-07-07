@@ -1,24 +1,30 @@
 """Scraping des vidéos d'un profil Instagram via un navigateur headless.
 
-Instagram bloque le listing anonyme des posts d'un profil via son API/GraphQL
-(yt-dlp échoue systématiquement avec "login required"). En revanche, la page
-publique du profil est bien accessible sans compte dans un vrai navigateur :
-on charge la page, on scrolle pour déclencher le chargement des posts
-suivants (comme un visiteur normal), puis on lit les vues affichées sur
-chaque vignette de reel directement dans le DOM rendu.
+Instagram bloque désormais l'accès ANONYME aux profils depuis une IP
+datacenter (VPS) : la page comme l'API renvoient HTTP 429 et redirigent vers
+/accounts/login. Il faut donc une session CONNECTÉE : on charge dans le
+navigateur headless les cookies d'un compte Instagram (réglage
+`instagram_cookies_file`, format Netscape exporté depuis un navigateur), puis
+on lit la page publique du profil comme un visiteur connecté — on scrolle pour
+charger les posts suivants et on lit les vues affichées sur chaque vignette de
+reel dans le DOM rendu.
 
 Fragile par nature (dépend de la structure HTML d'Instagram, qui change
 régulièrement) : capturé par ConnectorError/ParsingError, avec repli en
 saisie manuelle dans l'UI comme les autres connecteurs.
 """
 
+import os
 import re
+from http.cookiejar import MozillaCookieJar
 
+from app.config import get_settings
 from app.modules.clippers.connectors.base import VideoInfo
 from app.modules.clippers.connectors.errors import (
     ConnectorError,
     NotFoundError,
     ParsingError,
+    RateLimitedError,
 )
 
 _USER_AGENT = (
@@ -106,12 +112,75 @@ def _extract_posts(page) -> dict[str, dict]:
     return posts
 
 
+def _load_cookies(path: str) -> list[dict]:
+    """Parse un cookies.txt (format Netscape) et le convertit au format attendu
+    par Playwright. Gère le préfixe `#HttpOnly_` ajouté par les extensions type
+    « Get cookies.txt ». Ne garde que les cookies du domaine instagram.com."""
+    cookies: list[dict] = []
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            raw = line.strip()
+            http_only = False
+            if raw.startswith("#HttpOnly_"):
+                raw = raw[len("#HttpOnly_"):]
+                http_only = True
+            elif not raw or raw.startswith("#"):
+                continue
+            parts = raw.split("\t")
+            if len(parts) != 7:
+                continue
+            domain, _incl_sub, cookie_path, secure, expiry, name, value = parts
+            if "instagram.com" not in domain:
+                continue
+            try:
+                expires = int(expiry)
+            except ValueError:
+                expires = 0
+            cookies.append({
+                "name": name,
+                "value": value,
+                "domain": domain,
+                "path": cookie_path or "/",
+                "secure": secure.upper() == "TRUE",
+                "httpOnly": http_only,
+                "expires": expires if expires > 0 else -1,
+            })
+    return cookies
+
+
+def _resolve_cookies() -> list[dict]:
+    path = get_settings().instagram_cookies_file
+    if not path:
+        return []
+    if not os.path.isfile(path):
+        raise ConnectorError(
+            f"Fichier de cookies Instagram introuvable : {path} "
+            "(vérifie INSTAGRAM_COOKIES_FILE)"
+        )
+    cookies = _load_cookies(path)
+    if not any(c["name"] == "sessionid" for c in cookies):
+        raise ConnectorError(
+            "Le fichier de cookies Instagram ne contient pas de 'sessionid' — "
+            "ré-exporte un cookies.txt depuis un navigateur CONNECTÉ à Instagram."
+        )
+    return cookies
+
+
+def _blocked_by_login_wall(response, page) -> bool:
+    """Instagram bloque l'accès anonyme/limité : 429 ou redirection login."""
+    if response is not None and response.status == 429:
+        return True
+    return "/accounts/login" in page.url
+
+
 def fetch_instagram_profile_videos(profile_url: str) -> list[VideoInfo]:
     try:
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
     except ImportError as exc:  # pragma: no cover
         raise ConnectorError("playwright n'est pas installé") from exc
+
+    cookies = _resolve_cookies()
 
     try:
         with sync_playwright() as pw:
@@ -122,14 +191,32 @@ def fetch_instagram_profile_videos(profile_url: str) -> list[VideoInfo]:
                 headless=True, args=["--disable-dev-shm-usage"]
             )
             try:
-                page = browser.new_page(user_agent=_USER_AGENT,
-                                        viewport={"width": 1280, "height": 1600})
+                context = browser.new_context(
+                    user_agent=_USER_AGENT,
+                    viewport={"width": 1280, "height": 1600},
+                )
+                if cookies:
+                    context.add_cookies(cookies)
+                page = context.new_page()
                 response = page.goto(profile_url, wait_until="domcontentloaded",
                                      timeout=30_000)
                 if response is not None and response.status == 404:
                     raise NotFoundError(f"Profil Instagram introuvable : {profile_url}")
-                _dismiss_overlays(page)
                 page.wait_for_timeout(1500)
+                if _blocked_by_login_wall(response, page):
+                    if not cookies:
+                        raise RateLimitedError(
+                            "Instagram bloque l'accès anonyme (HTTP 429 / mur de "
+                            "login) depuis cette IP. Configure INSTAGRAM_COOKIES_FILE "
+                            "avec un cookies.txt d'un compte connecté."
+                        )
+                    raise RateLimitedError(
+                        "Session Instagram refusée (429 / redirection login) : "
+                        "cookies expirés/invalides ou IP temporairement bloquée. "
+                        "Ré-exporte un cookies.txt récent d'un compte connecté."
+                    )
+                _dismiss_overlays(page)
+                page.wait_for_timeout(1000)
 
                 posts: dict[str, dict] = {}
                 stale_rounds = 0
@@ -147,7 +234,7 @@ def fetch_instagram_profile_videos(profile_url: str) -> list[VideoInfo]:
                 posts.update(_extract_posts(page))
             finally:
                 browser.close()
-    except NotFoundError:
+    except (NotFoundError, RateLimitedError):
         raise
     except PlaywrightError as exc:
         raise ConnectorError(f"Navigateur headless : {exc}") from exc
