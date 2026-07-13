@@ -18,11 +18,16 @@ logger = logging.getLogger(__name__)
 
 
 def refresh_all_views() -> dict:
-    from app.modules.clippers.services import view_refresh_service
+    from app.modules.clippers.services import stats_service, view_refresh_service
 
     db = session_scope()
     try:
-        return view_refresh_service.refresh_all(db)
+        result = view_refresh_service.refresh_all(db)
+        try:
+            stats_service.write_campaign_stats(db)
+        except Exception:
+            pass
+        return result
     finally:
         db.close()
 
@@ -34,6 +39,16 @@ def generate_weekly_payout() -> int:
     try:
         cycle = payout_service.generate_cycle(db)
         return cycle.id
+    finally:
+        db.close()
+
+
+def send_weekly_reports() -> dict:
+    from app.modules.clippers.services import weekly_report_service
+
+    db = session_scope()
+    try:
+        return weekly_report_service.send_all_reports(db)
     finally:
         db.close()
 
@@ -51,6 +66,15 @@ def register(scheduler: BaseScheduler) -> None:
         generate_weekly_payout,
         CronTrigger(day_of_week="sun", hour=18, minute=0),
         id="clippers.generate_weekly_payout",
+        replace_existing=True,
+        misfire_grace_time=3600 * 6,
+        coalesce=True,
+    )
+    # Rapports Discord (clippers + staff) le dimanche 20h, après le récap de 18h
+    scheduler.add_job(
+        send_weekly_reports,
+        CronTrigger(day_of_week="sun", hour=20, minute=0),
+        id="clippers.send_weekly_reports",
         replace_existing=True,
         misfire_grace_time=3600 * 6,
         coalesce=True,

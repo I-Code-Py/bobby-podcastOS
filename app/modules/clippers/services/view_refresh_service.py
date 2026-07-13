@@ -16,6 +16,9 @@ from app.core.settings_service import get_min_views_per_video
 from app.modules.clippers.connectors.account_videos import fetch_account_videos
 from app.modules.clippers.connectors.base import VideoInfo
 from app.modules.clippers.connectors.errors import ConnectorError, RateLimitedError
+from app.modules.clippers.connectors.instagram_apify import (
+    fetch_instagram_profile_videos_apify,
+)
 from app.modules.clippers.connectors.instagram_playwright import (
     fetch_instagram_profile_videos,
 )
@@ -41,10 +44,13 @@ logger = logging.getLogger(__name__)
     reraise=True,
 )
 def _fetch_with_retry(profile_url: str, platform: str) -> list[VideoInfo]:
-    # Instagram bloque le listing anonyme via yt-dlp (login required
-    # systématique) : on passe par un navigateur headless à la place, qui
-    # accède à la page publique du profil comme un visiteur normal.
+    # Instagram bloque le listing anonyme (login required / 429 sur IP
+    # datacenter). Ordre de préférence : Apify (proxies, sans cookie, renvoie
+    # les vues) si un token est configuré, sinon navigateur headless avec
+    # cookies. À défaut, le connecteur lève une erreur -> repli saisie manuelle.
     if platform == PLATFORM_INSTAGRAM:
+        if get_settings().apify_token:
+            return fetch_instagram_profile_videos_apify(profile_url)
         return fetch_instagram_profile_videos(profile_url)
     return fetch_account_videos(profile_url)
 

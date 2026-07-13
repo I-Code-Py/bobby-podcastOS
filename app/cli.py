@@ -59,5 +59,15 @@ def weekly_payout():
     typer.echo(f"Récap #{cycle_id} généré.")
 
 
+@app.command()
+def weekly_report():
+    """Envoie les rapports hebdomadaires (clippers + staff) sur Discord."""
+    from app.modules.clippers.jobs import send_weekly_reports
+
+    res = send_weekly_reports()
+    typer.echo(f"Clippers: {'ok' if res['clipper'] else 'échec'} | "
+               f"Staff: {'ok' if res['staff'] else 'échec'}")
+
+
 if __name__ == "__main__":
     app()

@@ -8,3 +8,5 @@ venv/
 .pytest_cache/
 caddy_data/
 caddy_config/
+data/shared/
+.claude/
