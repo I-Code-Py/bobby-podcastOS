@@ -10,7 +10,10 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.routers import clipping as clipping_api
+from app.api.routers import episodes as episodes_api
 from app.api.routers import session as session_api
+from app.api.routers import tasks as tasks_api
+from app.api.routers import team as team_api
 from app.config import get_settings
 from app.core.auth.deps import NotAuthenticatedError
 from app.core.auth.router import limiter
@@ -55,6 +58,9 @@ def create_app() -> FastAPI:
     # API JSON du SPA. Même session, même base — seule la façon de répondre change.
     app.include_router(session_api.router)
     app.include_router(clipping_api.router)
+    app.include_router(episodes_api.router)
+    app.include_router(tasks_api.router)
+    app.include_router(team_api.router)
 
     @app.exception_handler(NotAuthenticatedError)
     async def redirect_to_login(request: Request, exc: NotAuthenticatedError):
