@@ -7,7 +7,7 @@
 
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.clippers.models import (
@@ -20,18 +20,43 @@ from app.modules.clippers.models import (
 
 
 def clipper_daily_totals(db: Session, clipper_id: int) -> list[tuple[date, int]]:
+    """Total de vues du clippeur (somme de ses comptes), jour par jour.
+
+    Un compte dont le scraping a échoué un jour donné n'a pas de snapshot ce
+    jour-là. Les sommer par un simple `GROUP BY captured_at` le compterait alors
+    pour zéro : la courbe plonge, puis explose le lendemain quand le compte
+    réapparaît. Vu du dashboard comme du rapport Discord, ce sont des chutes et
+    des pics qui n'ont jamais eu lieu.
+
+    On reporte donc, pour chaque compte et chaque jour, son dernier relevé
+    connu : les vues d'un compte ne disparaissent pas parce qu'on a échoué à les
+    lire. Tant qu'un compte n'a aucun relevé (il n'était pas encore suivi), il
+    ne compte pour rien — là, le zéro est la vérité.
+    """
     rows = db.execute(
         select(
             AccountViewSnapshot.captured_at,
-            func.sum(AccountViewSnapshot.total_views),
+            AccountViewSnapshot.account_id,
+            AccountViewSnapshot.total_views,
         )
         .join(Account, Account.id == AccountViewSnapshot.account_id)
         .where(Account.clipper_id == clipper_id,
                Account.status != ACCOUNT_STATUS_ARCHIVED)
-        .group_by(AccountViewSnapshot.captured_at)
         .order_by(AccountViewSnapshot.captured_at)
     ).all()
-    return [(d, int(total or 0)) for d, total in rows]
+    if not rows:
+        return []
+
+    by_day: dict[date, dict[int, int]] = {}
+    for captured_at, account_id, total_views in rows:
+        by_day.setdefault(captured_at, {})[account_id] = int(total_views or 0)
+
+    totals: list[tuple[date, int]] = []
+    last_known: dict[int, int] = {}
+    for day in sorted(by_day):
+        last_known.update(by_day[day])
+        totals.append((day, sum(last_known.values())))
+    return totals
 
 
 def account_daily_totals(db: Session, account_id: int) -> list[tuple[date, int]]:

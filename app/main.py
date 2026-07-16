@@ -4,11 +4,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.api.routers import clipping as clipping_api
+from app.api.routers import session as session_api
 from app.config import get_settings
 from app.core.auth.deps import NotAuthenticatedError
 from app.core.auth.router import limiter
@@ -50,13 +52,25 @@ def create_app() -> FastAPI:
     app.include_router(accounts.router)
     app.include_router(payouts.router)
     app.include_router(settings_router.router)
+    # API JSON du SPA. Même session, même base — seule la façon de répondre change.
+    app.include_router(session_api.router)
+    app.include_router(clipping_api.router)
 
     @app.exception_handler(NotAuthenticatedError)
     async def redirect_to_login(request: Request, exc: NotAuthenticatedError):
+        # Sous /api, un redirect 303 vers une page HTML serait suivi en silence
+        # par fetch() et le SPA croirait parser du JSON. On répond en JSON.
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "Non authentifié"}, status_code=401)
         return RedirectResponse(f"/login?next={quote(exc.next_url)}", status_code=303)
 
     @app.exception_handler(RateLimitExceeded)
     async def rate_limited(request: Request, exc: RateLimitExceeded):
+        if request.url.path.startswith("/api/"):
+            return JSONResponse(
+                {"detail": "Trop de tentatives. Réessaie dans une minute."},
+                status_code=429,
+            )
         return RedirectResponse("/login", status_code=303)
 
     @app.middleware("http")
