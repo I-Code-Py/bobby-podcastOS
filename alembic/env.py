@@ -10,6 +10,8 @@ from app.db import Base
 # Enregistre tous les modèles sur Base.metadata pour l'autogénération
 import app.core.auth.models  # noqa: F401,E402
 import app.modules.clippers.models  # noqa: F401,E402
+import app.modules.production.models  # noqa: F401,E402
+import app.modules.team.models  # noqa: F401,E402
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)

@@ -27,6 +27,7 @@ from app.modules.clippers.models import (
     PAYMENT_METHOD_LABELS,
     PLATFORM_LABELS,
     Account,
+    AccountVideoSnapshot,
     Clipper,
 )
 from app.modules.clippers.services import (
@@ -119,6 +120,28 @@ def _top_videos(clipper: Clipper) -> list[VideoOut]:
     return videos[:TOP_VIDEOS_PER_CLIPPER]
 
 
+def _video_series(db: Session, video_ids: list[int]) -> dict[int, list[int]]:
+    """Séries de vues pour un lot de vidéos, en une seule requête.
+
+    Passer par `evolution_service.video_daily_views` ferait une requête par
+    vidéo, soit une cinquantaine pour la page.
+    """
+    if not video_ids:
+        return {}
+    rows = db.execute(
+        select(
+            AccountVideoSnapshot.account_video_id,
+            AccountVideoSnapshot.view_count,
+        )
+        .where(AccountVideoSnapshot.account_video_id.in_(video_ids))
+        .order_by(AccountVideoSnapshot.captured_at)
+    ).all()
+    series: dict[int, list[int]] = {}
+    for video_id, view_count in rows:
+        series.setdefault(video_id, []).append(int(view_count or 0))
+    return series
+
+
 def _load_clippers(db: Session) -> list[Clipper]:
     """Charge clippeurs + comptes + snapshots + vidéos en une fois.
 
@@ -140,9 +163,17 @@ def _load_clippers(db: Session) -> list[Clipper]:
 @router.get("/clipping", response_model=ClippingOut)
 def read_clipping(db: Session = Depends(get_db), _user: User = Depends(get_api_user)):
     stats = stats_service.campaign_stats(db)
+    clippers_orm = _load_clippers(db)
+
+    # Top vidéos d'abord, puis leurs séries en une requête groupée.
+    top_videos = {clipper.id: _top_videos(clipper) for clipper in clippers_orm}
+    series = _video_series(db, [v.id for videos in top_videos.values() for v in videos])
+    for videos in top_videos.values():
+        for video in videos:
+            video.daily = series.get(video.id, [])
 
     clippers: list[ClipperOut] = []
-    for clipper in _load_clippers(db):
+    for clipper in clippers_orm:
         unpaid_views, amount_due_cents = payout_service.live_unpaid_estimate_cents(db, clipper)
         daily = _daily_points(
             evolution_service.clipper_daily_totals(db, clipper.id), DAILY_WINDOW_DAYS
@@ -166,7 +197,7 @@ def read_clipping(db: Session = Depends(get_db), _user: User = Depends(get_api_u
                 payment_handle=clipper.payment_handle,
                 daily=daily,
                 sources=_sources(clipper),
-                videos=_top_videos(clipper),
+                videos=top_videos[clipper.id],
                 clicks=None,
                 conversion=None,
             )

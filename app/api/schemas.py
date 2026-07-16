@@ -61,6 +61,8 @@ class VideoOut(ApiModel):
     views: int
     platform: str
     published_at: date | None
+    """Série des vues de la vidéo, du plus ancien au plus récent (courbe de suivi)."""
+    daily: list[int] = []
 
 
 class ClipperOut(ApiModel):

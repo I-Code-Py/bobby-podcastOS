@@ -26,6 +26,11 @@ def authenticate(db: Session, email: str, password: str) -> User | None:
     user = get_user_by_email(db, email)
     if user is None or not user.active:
         return None
+    # Un membre invité existe en base mais n'a pas encore choisi de mot de passe.
+    # Il ne peut pas se connecter — et sans ce garde, passlib lèverait sur un
+    # hash nul, transformant un refus attendu en erreur 500.
+    if not user.password_hash:
+        return None
     if not verify_password(password, user.password_hash):
         return None
     return user

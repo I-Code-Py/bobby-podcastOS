@@ -32,6 +32,8 @@ def init_db() -> None:
     """Crée toutes les tables (dev/tests). En production, utiliser Alembic."""
     import app.core.auth.models  # noqa: F401
     import app.modules.clippers.models  # noqa: F401
+    import app.modules.production.models  # noqa: F401
+    import app.modules.team.models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 
